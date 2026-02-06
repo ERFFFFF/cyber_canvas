@@ -2,6 +2,7 @@
 node_modules/
 .pnp
 .pnp.js
+package-lock.json
 
 # Production Build / Compiled Output
 # Check your tsconfig.json "outDir" setting to match this
