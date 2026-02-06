@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production Build / Compiled Output
+# Check your tsconfig.json "outDir" setting to match this
+dist/
+build/
+lib/
+out/
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+
+# TypeScript-specific
+*.tsbuildinfo
+
+# Environment Variables (Keep these secure!)
+.env
+.env.test
+.env.production
+.env.local
+*.env
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE & Editor config (Optional: remove .vscode if you share settings)
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS System Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Optional: Next.js build output
+.next/
+
+# Optional: Serverless / Cloud builds
+.serverless/
+.terraform/
