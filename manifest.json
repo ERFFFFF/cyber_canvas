@@ -1,0 +1,10 @@
+{
+    "id": "cybercanvas",
+    "name": "Cyber Canvas",
+    "version": "1.8.2",
+    "minAppVersion": "0.15.0",
+    "description": "Cyber plugin for canvas to help for foresic. You can create IOCs, notes, and automatic timelines based on links or time.",
+    "author": "ERFFFFF",
+    "authorUrl": "https://github.com/ERFFFFF/Obsidian_Plugin_Cyber",
+    "isDesktopOnly": false
+}
