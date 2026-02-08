@@ -1,6 +1,32 @@
+/**
+ * LinkTimelineProcessing.ts - Attack chain extraction via canvas edges
+ *
+ * This processor analyzes the directed graph formed by canvas edges between
+ * IOC nodes. It builds a layered DAG structure where nodes are organized by
+ * their maximum depth from root nodes (nodes with no incoming edges).
+ *
+ * The result is consumed by RenderTimelinesModal's "Link Timeline" tab,
+ * which renders a horizontal layered graph with nodes at the same depth
+ * displayed side-by-side and SVG arrows showing all edge connections.
+ */
+
 import { App } from 'obsidian';
 import { IOCCardsTypes } from './IOCCardsTypes';
-import { IOC_TYPES } from './IOCCardsTypes';
+import { parseIOCNode, IOCNodeData } from './IOCParser';
+
+/** Edge between two nodes in the DAG */
+export interface GraphEdge {
+    fromId: string;
+    toId: string;
+    label: string;
+}
+
+/** Node in a layer with its depth and associated data */
+export interface LayeredNode {
+    data: IOCNodeData;
+    nodeId: string;
+    depth: number;
+}
 
 export class LinkTimelineProcessor {
     private app: App;
@@ -13,77 +39,102 @@ export class LinkTimelineProcessor {
         this.IOCCardsTypes = IOCCardsTypes;
     }
 
+    /**
+     * Extract link-based attack chain data from the active canvas.
+     *
+     * Algorithm overview:
+     *   1. Parse all canvas text nodes for IOC data using the shared parser
+     *   2. Build adjacency lists (incoming/outgoing) from canvas edges
+     *   3. Use BFS to assign each node to its maximum depth from any root
+     *   4. Each node appears exactly ONCE at its calculated depth layer
+     *   5. Group nodes into layers by depth for horizontal visualization
+     *   6. Collect all edges for arrow rendering
+     *   7. Collect isolated IOC nodes (no edges at all)
+     *
+     * This creates a layered DAG layout where nodes at the same depth are
+     * displayed side-by-side horizontally, with SVG arrows connecting parents
+     * to children across layers.
+     *
+     * @returns Object with layers (array of LayeredNode arrays), edges, isolatedNodes, and diagnostic counters
+     */
     extractEnhancedLinkData(): any {
-        console.log('🔍 Starting enhanced comprehensive canvas analysis...');
+        console.log('Starting enhanced comprehensive canvas analysis...');
         const activeLeaf = this.app.workspace.activeLeaf;
-        
+
         if (!activeLeaf || !activeLeaf.view) {
-            console.log('❌ No active workspace leaf found');
-            return { chains: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+            console.log('No active workspace leaf found');
+            return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
         }
 
         if (activeLeaf.view.getViewType() !== 'canvas') {
-            console.log('❌ Not a canvas view');
-            return { chains: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+            console.log('Not a canvas view');
+            return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
         }
 
         const canvasView = activeLeaf.view as any;
         const canvas = canvasView.canvas;
-        
+
         if (!canvas) {
-            console.log('❌ No canvas object in view');
-            return { chains: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+            console.log('No canvas object in view');
+            return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
         }
 
-        // Get nodes and edges
-        let nodes = [];
-        let edges = [];
-        
-        if (canvas.nodes && Array.isArray(canvas.nodes)) {
+        // Retrieve nodes and edges from the canvas.
+        // Obsidian's canvas API exposes nodes as a Map (canvas.nodes) and
+        // edges as an iterable. Some versions store them under canvas.data.
+        let nodes: any[] = [];
+        let edges: any[] = [];
+
+        // canvas.nodes is a Map in live canvas
+        if (canvas.nodes instanceof Map) {
+            canvas.nodes.forEach((node: any) => nodes.push(node));
+        } else if (Array.isArray(canvas.nodes)) {
             nodes = canvas.nodes;
-        } else if (canvas.data && canvas.data.nodes) {
-            nodes = canvas.data.nodes;
+        } else if (canvas.data?.nodes) {
+            nodes = Array.isArray(canvas.data.nodes) ? canvas.data.nodes : [];
         }
 
-        if (canvas.edges && Array.isArray(canvas.edges)) {
+        if (canvas.edges instanceof Map) {
+            canvas.edges.forEach((edge: any) => edges.push(edge));
+        } else if (Array.isArray(canvas.edges)) {
             edges = canvas.edges;
-        } else if (canvas.data && canvas.data.edges) {
-            edges = canvas.data.edges;
+        } else if (canvas.data?.edges) {
+            edges = Array.isArray(canvas.data.edges) ? canvas.data.edges : [];
         }
 
-        console.log(`📊 Final counts: ${nodes.length} nodes, ${edges.length} edges`);
-        
+        console.log(`Final counts: ${nodes.length} nodes, ${edges.length} edges`);
+
         if (nodes.length === 0) {
-            return { chains: [], isolatedNodes: [], canvasFound: true, totalNodes: 0, totalEdges: edges.length, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+            return { rootNodes: [], isolatedNodes: [], canvasFound: true, totalNodes: 0, totalEdges: edges.length, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
         }
 
-        // Build IOC node map with fixed parsing
-        const iocNodeMap = new Map();
-        const incomingConnections = new Map();
-        const outgoingConnections = new Map();
-        const edgeLabels = new Map(); // key: "fromId->toId", value: label text
+        // --- Step 1: Parse all canvas nodes and build the IOC node map ---
+        const iocNodeMap = new Map<string, IOCNodeData>();
+        const incomingConnections = new Map<string, string[]>();
+        const outgoingConnections = new Map<string, string[]>();
+        const edgeLabels = new Map<string, string>(); // key: "fromId->toId"
         let iocNodeCount = 0;
 
-        if (nodes.length != 0) {
-            canvas.nodes.forEach((node: any) => {
+        if (nodes.length !== 0) {
+            nodes.forEach((node: any) => {
                 if (node.text) {
-                    const nodeData = this.parseFixedIOCNode(node);
-                    if (nodeData.type) {
+                    const nodeData = parseIOCNode(node);
+                    if (nodeData) {
                         iocNodeMap.set(node.id, nodeData);
                         outgoingConnections.set(node.id, []);
                         incomingConnections.set(node.id, []);
                         iocNodeCount++;
-                        console.log(`✅ IOC node identified: ${node.id} - ${nodeData.type}`);
+                        console.log(`IOC node identified: ${node.id} - ${nodeData.type}`);
                     }
                 }
             });
         }
 
-        console.log(`📊 IOC nodes identified: ${iocNodeCount}`);
-        
+        console.log(`IOC nodes identified: ${iocNodeCount}`);
+
         if (iocNodeCount === 0) {
             return {
-                chains: [],
+                rootNodes: [],
                 isolatedNodes: [],
                 canvasFound: true,
                 totalNodes: nodes.length,
@@ -94,34 +145,55 @@ export class LinkTimelineProcessor {
             };
         }
 
+        // --- Step 2: Process edges to build adjacency lists ---
+        // Canvas edges may use different property names depending on the
+        // Obsidian version, so we check multiple possibilities.
         let validConnectionCount = 0;
-        
-        // Process edges
-        console.log(`🔍 Starting edge processing... Found ${edges.length} edges`);
-        if (nodes.length != 0) {
+
+        console.log(`Starting edge processing... Found ${edges.length} edges`);
+        if (nodes.length !== 0) {
             edges.forEach((edge: any, edgeIndex: number) => {
-                const possibleFromProps = ['fromNode', 'from', 'source', 'sourceId', 'fromId'];
-                const possibleToProps = ['toNode', 'to', 'target', 'targetId', 'toId'];
                 let fromId: string | null = null;
                 let toId: string | null = null;
 
-                for (const prop of possibleFromProps) {
-                    if (edge[prop] !== undefined && edge[prop] !== null) {
-                        fromId = edge[prop];
-                        break;
+                // Nested format: edge.from.node.id (Obsidian live canvas)
+                if (edge.from?.node?.id) {
+                    fromId = edge.from.node.id;
+                } else if (edge.from?.id) {
+                    fromId = edge.from.id;
+                } else if (typeof edge.from === 'string') {
+                    fromId = edge.from;
+                }
+                // Flat format fallback (serialized JSON)
+                if (!fromId) {
+                    for (const prop of ['fromNode', 'fromId', 'source', 'sourceId']) {
+                        if (edge[prop] && typeof edge[prop] === 'string') {
+                            fromId = edge[prop];
+                            break;
+                        }
                     }
                 }
 
-                for (const prop of possibleToProps) {
-                    if (edge[prop] !== undefined && edge[prop] !== null) {
-                        toId = edge[prop];
-                        break;
+                // Same for toId
+                if (edge.to?.node?.id) {
+                    toId = edge.to.node.id;
+                } else if (edge.to?.id) {
+                    toId = edge.to.id;
+                } else if (typeof edge.to === 'string') {
+                    toId = edge.to;
+                }
+                if (!toId) {
+                    for (const prop of ['toNode', 'toId', 'target', 'targetId']) {
+                        if (edge[prop] && typeof edge[prop] === 'string') {
+                            toId = edge[prop];
+                            break;
+                        }
                     }
                 }
 
                 if (!fromId || !toId) return;
 
-                // Extract edge label/text
+                // Extract edge label/text (used for connection annotations)
                 let edgeLabel = '';
                 if (edge.label) {
                     edgeLabel = edge.label;
@@ -129,9 +201,9 @@ export class LinkTimelineProcessor {
                     edgeLabel = edge.text;
                 }
 
-                console.log(`🔍 Edge ${edgeIndex}: ${fromId} -> ${toId}, Label: "${edgeLabel}"`);
+                console.log(`Edge ${edgeIndex}: ${fromId} -> ${toId}, Label: "${edgeLabel}"`);
 
-                // Only process if both nodes are IOC nodes
+                // Only record edges between two IOC nodes
                 if (iocNodeMap.has(fromId) && iocNodeMap.has(toId)) {
                     const fromConnections = outgoingConnections.get(fromId);
                     const toConnections = incomingConnections.get(toId);
@@ -139,67 +211,169 @@ export class LinkTimelineProcessor {
                     if (fromConnections && toConnections) {
                         fromConnections.push(toId);
                         toConnections.push(fromId);
-                        
-                        // Store edge label
+
+                        // Store edge label keyed by directed pair
                         const edgeKey = `${fromId}->${toId}`;
                         edgeLabels.set(edgeKey, edgeLabel);
-                        
+
                         validConnectionCount++;
-                        console.log(`✅ Valid IOC connection added: ${fromId} → ${toId} (Label: "${edgeLabel}")`);
+                        console.log(`Valid IOC connection added: ${fromId} -> ${toId} (Label: "${edgeLabel}")`);
                     }
                 }
             });
         }
 
-        console.log(`📊 Valid connections processed: ${validConnectionCount}`);
+        console.log(`Valid connections processed: ${validConnectionCount}`);
 
-        // Find source nodes
-        const sourceNodeIds: string[] = [];
-        iocNodeMap.forEach((nodeData, nodeId) => {
-            const nodeOutgoing = outgoingConnections.get(nodeId) || [];
-            const nodeIncoming = incomingConnections.get(nodeId) || [];
-            const hasOutgoing = nodeOutgoing.length > 0;
-            const hasIncoming = nodeIncoming.length > 0;
+        // --- Step 3: Build layered DAG structure using BFS ---
+        // Each node appears exactly ONCE at its maximum depth from any root
+        const nodeDepths = new Map<string, number>();
 
-            if (hasOutgoing && !hasIncoming) {
-                sourceNodeIds.push(nodeId);
-                console.log(`🎯 Source node identified: ${nodeId}`);
+        // Find root nodes (no incoming edges)
+        const rootNodeIds: string[] = [];
+        iocNodeMap.forEach((_, nodeId) => {
+            const incoming = incomingConnections.get(nodeId) || [];
+            if (incoming.length === 0) {
+                rootNodeIds.push(nodeId);
+                nodeDepths.set(nodeId, 0);
+                console.log(`Root node identified: ${nodeId}`);
             }
         });
 
-        console.log(`📊 Source nodes found: ${sourceNodeIds.length}`);
+        console.log(`Root nodes found: ${rootNodeIds.length}`);
 
-        // Build enhanced attack chains
-        const chains: any[] = [];
-        const visited = new Set();
+        // BFS to calculate maximum depth for each node
+        const queue: Array<{ nodeId: string; depth: number }> = rootNodeIds.map(id => ({ nodeId: id, depth: 0 }));
+        const visited = new Set<string>();
 
-        sourceNodeIds.forEach((sourceId: string) => {
-            if (!visited.has(sourceId)) {
-                const sourceOutgoing = outgoingConnections.get(sourceId) || [];
+        while (queue.length > 0) {
+            const { nodeId, depth } = queue.shift()!;
 
-                if (sourceOutgoing.length === 1) {
-                    const chain = this.buildEnhancedAttackChain(sourceId, outgoingConnections, iocNodeMap, edgeLabels, new Set());
-                    if (chain.length > 1) {
-                        chains.push(chain);
-                    }
-                } else if (sourceOutgoing.length > 1) {
-                    sourceOutgoing.forEach((targetId: string) => {
-                        const partialChain = this.buildEnhancedAttackChain(targetId, outgoingConnections, iocNodeMap, edgeLabels, new Set());
-                        const sourceNode = iocNodeMap.get(sourceId);
-                        const fullChain = [
-                            { ...sourceNode, edgeLabel: edgeLabels.get(`${sourceId}->${targetId}`) || '' },
-                            ...partialChain
-                        ];
-                        if (fullChain.length > 1) {
-                            chains.push(fullChain);
-                        }
-                    });
+            // Skip if already processed at a deeper level
+            if (visited.has(nodeId)) {
+                const currentDepth = nodeDepths.get(nodeId) || 0;
+                if (depth > currentDepth) {
+                    nodeDepths.set(nodeId, depth);
                 }
-                visited.add(sourceId);
+                continue;
+            }
+
+            visited.add(nodeId);
+            nodeDepths.set(nodeId, depth);
+
+            // Add all children to the queue
+            const children = outgoingConnections.get(nodeId) || [];
+            for (const childId of children) {
+                queue.push({ nodeId: childId, depth: depth + 1 });
+            }
+        }
+
+        // Handle nodes not reachable from roots (cycles or orphaned components)
+        iocNodeMap.forEach((_, nodeId) => {
+            if (!nodeDepths.has(nodeId)) {
+                const hasConn = (outgoingConnections.get(nodeId)?.length || 0) > 0 ||
+                               (incomingConnections.get(nodeId)?.length || 0) > 0;
+                if (hasConn) {
+                    // Orphaned component - treat as new root
+                    nodeDepths.set(nodeId, 0);
+                    const orphanQueue: Array<{ nodeId: string; depth: number }> = [{ nodeId, depth: 0 }];
+                    const orphanVisited = new Set<string>();
+
+                    while (orphanQueue.length > 0) {
+                        const { nodeId: currentId, depth: currentDepth } = orphanQueue.shift()!;
+
+                        if (orphanVisited.has(currentId)) continue;
+                        orphanVisited.add(currentId);
+
+                        if (!nodeDepths.has(currentId)) {
+                            nodeDepths.set(currentId, currentDepth);
+                        }
+
+                        const orphanChildren = outgoingConnections.get(currentId) || [];
+                        for (const childId of orphanChildren) {
+                            if (!nodeDepths.has(childId)) {
+                                orphanQueue.push({ nodeId: childId, depth: currentDepth + 1 });
+                            }
+                        }
+                    }
+                }
             }
         });
 
-        // Find truly isolated nodes
+        // --- Step 4: Group nodes into layers by depth ---
+        const layerMap = new Map<number, LayeredNode[]>();
+        let maxDepth = 0;
+
+        nodeDepths.forEach((depth, nodeId) => {
+            const nodeData = iocNodeMap.get(nodeId);
+            if (nodeData) {
+                if (!layerMap.has(depth)) {
+                    layerMap.set(depth, []);
+                }
+                layerMap.get(depth)!.push({
+                    data: nodeData,
+                    nodeId: nodeId,
+                    depth: depth
+                });
+                maxDepth = Math.max(maxDepth, depth);
+            }
+        });
+
+        // Convert layer map to sorted array
+        const layers: LayeredNode[][] = [];
+        for (let i = 0; i <= maxDepth; i++) {
+            layers.push(layerMap.get(i) || []);
+        }
+
+        // --- Step 5: Collect all edges for arrow rendering ---
+        const graphEdges: GraphEdge[] = [];
+        edges.forEach((edge: any) => {
+            let fromId: string | null = null;
+            let toId: string | null = null;
+
+            if (edge.from?.node?.id) {
+                fromId = edge.from.node.id;
+            } else if (edge.from?.id) {
+                fromId = edge.from.id;
+            } else if (typeof edge.from === 'string') {
+                fromId = edge.from;
+            }
+            if (!fromId) {
+                for (const prop of ['fromNode', 'fromId', 'source', 'sourceId']) {
+                    if (edge[prop] && typeof edge[prop] === 'string') {
+                        fromId = edge[prop];
+                        break;
+                    }
+                }
+            }
+
+            if (edge.to?.node?.id) {
+                toId = edge.to.node.id;
+            } else if (edge.to?.id) {
+                toId = edge.to.id;
+            } else if (typeof edge.to === 'string') {
+                toId = edge.to;
+            }
+            if (!toId) {
+                for (const prop of ['toNode', 'toId', 'target', 'targetId']) {
+                    if (edge[prop] && typeof edge[prop] === 'string') {
+                        toId = edge[prop];
+                        break;
+                    }
+                }
+            }
+
+            if (fromId && toId && iocNodeMap.has(fromId) && iocNodeMap.has(toId)) {
+                const edgeLabel = edge.label || edge.text || '';
+                graphEdges.push({
+                    fromId: fromId,
+                    toId: toId,
+                    label: edgeLabel
+                });
+            }
+        });
+
+        // --- Step 6: Collect isolated nodes ---
         const isolatedNodeIds: string[] = [];
         iocNodeMap.forEach((nodeData, nodeId) => {
             const nodeOutgoing = outgoingConnections.get(nodeId) || [];
@@ -208,169 +382,26 @@ export class LinkTimelineProcessor {
 
             if (!hasAnyConnections) {
                 isolatedNodeIds.push(nodeId);
-                console.log(`🏝️ Isolated node identified: ${nodeId}`);
+                console.log(`Isolated node identified: ${nodeId}`);
             }
         });
 
         const isolatedNodes = isolatedNodeIds.map((nodeId: string) => iocNodeMap.get(nodeId)).filter(Boolean);
 
         const result = {
-            chains: chains,
+            layers: layers,
+            edges: graphEdges,
             isolatedNodes: isolatedNodes,
             canvasFound: true,
             totalNodes: nodes.length,
             totalEdges: edges.length,
             iocNodes: iocNodeCount,
             validConnections: validConnectionCount,
-            sourceNodes: sourceNodeIds.length
+            rootNodes: rootNodeIds.length
         };
 
-        console.log('📊 Final enhanced comprehensive result:', result);
+        console.log('Final layered DAG structure result:', result);
+        console.log(`Layers: ${layers.length}, Total nodes in layers: ${layers.reduce((sum, layer) => sum + layer.length, 0)}, Isolated nodes: ${isolatedNodes.length}`);
         return result;
-    }
-
-    private buildEnhancedAttackChain(
-        startNodeId: string,
-        outgoingConnections: Map<string, string[]>,
-        nodeMap: Map<string, any>,
-        edgeLabels: Map<string, string>,
-        visited: Set<string>,
-        currentChain: any[] = []
-    ): any[] {
-        if (visited.has(startNodeId)) {
-            return currentChain;
-        }
-
-        visited.add(startNodeId);
-        const nodeData = nodeMap.get(startNodeId);
-        const outgoing = outgoingConnections.get(startNodeId) || [];
-
-        if (nodeData) {
-            // Get the edge label for the NEXT connection (if exists)
-            const edgeLabel = outgoing.length > 0 ? (edgeLabels.get(`${startNodeId}->${outgoing[0]}`) || '') : '';
-            
-            // Add node with its outgoing edge label
-            currentChain.push({
-                ...nodeData,
-                edgeLabel: edgeLabel
-            });
-        }
-
-        if (outgoing.length > 0) {
-            const nextNodeId = outgoing[0];
-            return this.buildEnhancedAttackChain(nextNodeId, outgoingConnections, nodeMap, edgeLabels, visited, currentChain);
-        }
-
-        return currentChain;
-    }
-
-    private parseFixedIOCNode(node: any): any {
-        if (!node.text) return { type: '', value: '', time: '', splunkQuery: '', icon: '', color: '#333' };
-
-        const text = node.text;
-        let iocType = '';
-        let value = '';
-        let time = '';
-        let splunkQuery = '';
-        let tactic = '';
-        let technique = '';
-        let icon = '';
-        let color = '#333';
-
-        console.log('🔍 DEBUG: Looking for IOC type in text:', text.substring(0, 100));
-
-        const iocTypePatterns = [
-            { pattern: /IP Address/i, type: "IP Address" },
-            { pattern: /Domain Name/i, type: "Domain Name" },
-            { pattern: /File Hash/i, type: "File Hash" },
-            { pattern: /URL/i, type: "URL" },
-            { pattern: /Email Address/i, type: "Email Address" },
-            { pattern: /Hostname/i, type: "Hostname" },
-            { pattern: /YARA Rule/i, type: "YARA Rule" },
-            { pattern: /Sigma Rule/i, type: "Sigma Rule" },
-            { pattern: /Registry Key/i, type: "Registry Key" },
-            { pattern: /Process Name/i, type: "Process Name" },
-            { pattern: /Network Traffic/i, type: "Network Traffic" },
-            { pattern: /Command Line/i, type: "Command Line" },
-            { pattern: /File/i, type: "File" },
-            { pattern: /Note/i, type: "Note" },
-            { pattern: /DLL/i, type: "DLL" },
-            { pattern: /C2/i, type: "C2" }
-        ];
-
-        for (const { pattern, type } of iocTypePatterns) {
-            if (pattern.test(text)) {
-                iocType = type;
-                console.log(`🔍 DEBUG: IOC type detected: ${iocType}`);
-                break;
-            }
-        }
-
-        if (!iocType) {
-            console.log('🔍 DEBUG: No IOC type found in text');
-            return { type: '', value: '', time: '', splunkQuery: '', icon: '', color: '#333' };
-        }
-
-        // Value extraction
-        const valueMatch = text.match(/```([^`]+)```/i);
-        if (valueMatch && valueMatch[1] && valueMatch[1].trim()) {
-            value = valueMatch[1].trim();
-        }
-
-        // Time extraction
-        const timePatterns = [
-            /\\*\\*Time of Event:\\*\\*\\s*(\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2})/i,
-            /\\*\\*Time:\\*\\*\\s*(\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2})/i,
-            /(\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2})/i
-        ];
-
-        for (const pattern of timePatterns) {
-            const match = text.match(pattern);
-            if (match && match[1]) {
-                time = match[1].trim();
-                break;
-            }
-        }
-
-        // Splunk query extraction
-        const splunkMatch = text.match(/\\*\\*Splunk Query:\\*\\*[:\\s]*([\\s\\S]*?)(?=\\*\\*|$)/i);
-        if (splunkMatch && splunkMatch[1]) {
-            splunkQuery = splunkMatch[1].trim();
-        }
-
-        // Tactic extraction
-        const tacticMatch = text.match(/\\*\\*Tactic:\\*\\*\\s*([^\\n]+)/i);
-        if (tacticMatch && tacticMatch[1]) {
-            tactic = tacticMatch[1].trim();
-        }
-
-        // Technique extraction
-        const techniqueMatch = text.match(/\\*\\*Technique:\\*\\*\\s*([^\\n]+)/i);
-        if (techniqueMatch && techniqueMatch[1]) {
-            technique = techniqueMatch[1].trim();
-        }
-
-        // Get icon and color from IOCCardsTypes
-        console.log('🔍 DEBUG: Using direct IOC_TYPES import');
-        Object.keys(IOC_TYPES).forEach((key: string) => {
-            console.log('🔍 DEBUG: Checking key:', key, 'name:', IOC_TYPES[key].name, 'vs iocType:', iocType);
-            if (IOC_TYPES[key].name === iocType) {
-                icon = IOC_TYPES[key].svg;
-                color = IOC_TYPES[key].color;
-                console.log('🔍 DEBUG: MATCH! Color set to:', color);
-            }
-        });
-
-        return {
-            id: node.id,
-            type: iocType,
-            value: value,
-            time: time,
-            splunkQuery: splunkQuery,
-            tactic: tactic,
-            technique: technique,
-            icon: icon,
-            color: color
-        };
     }
 }

@@ -1,9 +1,33 @@
+/**
+ * IOCCardsTypes.ts - IOC (Indicator of Compromise) type definitions.
+ *
+ * Defines the 16 built-in IOC types used across the plugin: IP Address, Domain,
+ * File Hash, URL, Email, Hostname, YARA Rule, Sigma Rule, Registry Key,
+ * Process Name, Network, Command Line, File, Note, DLL, and C2.
+ *
+ * Each IOC type carries its own display metadata (color, inline SVG icon) and a
+ * list of forensic fields that analysts fill in on the canvas card. The timeline
+ * processors identify card types by regex-matching `IOCField.name` against node
+ * text, so the `name` value doubles as a display label and a detection key.
+ *
+ * SVG icons are stored as inline strings here (not loaded from the icons/
+ * directory) so the canvas cards remain self-contained markdown+HTML.
+ */
+
+/** Describes a single IOC type and its visual/structural metadata. */
 export interface IOCField {
+    /** Human-readable name shown on the card header; also used for regex matching by timeline processors. */
     name: string;
+    /** Obsidian icon identifier used for ribbon/command palette entries. */
     icon: string;
+    /** Hex color applied to the card header gradient, border, and timeline highlights. */
     color: string;
+    /** Analyst-editable fields rendered as labeled code blocks on the card. */
     fields: string[];
+    /** Inline SVG markup for the card header icon (32x32, stroke-based). */
     svg: string;
+    /** Optional OS-specific icon variants -- only used by the Hostname type
+     *  to let analysts pick a platform when creating the card. */
     os_icons?: {
       windows_workstation: string;
       windows_server: string;
@@ -11,12 +35,21 @@ export interface IOCField {
       linux: string;
     };
   }
-  
+
+  /** Dictionary mapping IOC type keys (snake_case IDs) to their field definitions. */
   export interface IOCCardsTypes {
     [key: string]: IOCField;
   }
-  
+
+  /**
+   * Master registry of all IOC types. Keys are stable snake_case identifiers
+   * (e.g. "ip_address", "file_hash") used as internal references throughout the
+   * plugin. This object is mutable at runtime via IOCCardFactory to support
+   * custom user-defined IOC types.
+   */
   export const IOC_TYPES: IOCCardsTypes = {
+    // --- Network-related IOC types ---
+
     ip_address: {
       name: 'IP Address',
       icon: 'network',
@@ -80,6 +113,8 @@ export interface IOCField {
   </svg>`
     },
     
+    // Hostname is the only IOC type with os_icons, triggering a secondary
+    // OS selector sub-view in RenderIOCCardsModal before card creation.
     hostname: {
       name: 'Hostname',
       icon: 'monitor',
@@ -106,6 +141,8 @@ export interface IOCField {
       }
     },
     
+    // --- Detection rule types ---
+
     yara_rule: {
       name: 'YARA Rule',
       icon: 'shield',
@@ -128,6 +165,8 @@ export interface IOCField {
   </svg>`
     },
     
+    // --- Host-based IOC types ---
+
     registry_key: {
       name: 'Registry Key',
       icon: 'settings',
@@ -175,6 +214,8 @@ export interface IOCField {
   </svg>`
     },
 
+    // --- File and artifact types ---
+
     file: {
       name: 'File',
       icon: 'file',
@@ -186,6 +227,8 @@ export interface IOCField {
   <line x1="8" y1="15" x2="16" y2="15"/>
 </svg>`
     },
+
+    // --- Utility types ---
 
     note: {
       name: 'Note',
@@ -219,6 +262,8 @@ export interface IOCField {
   <path d="M9.8 9.8l-0.7-0.7"/>
 </svg>`
     },
+
+    // --- Threat infrastructure ---
 
     c2: {
       name: 'C2',

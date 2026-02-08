@@ -1,33 +1,63 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, ItemView } from 'obsidian';
+/**
+ * IOC Canvas Plugin - Main entry point
+ *
+ * This is the core plugin class that Obsidian instantiates when the plugin is
+ * enabled. It is responsible for:
+ *   1. Registering commands and ribbon icons that open the timeline/IOC modals.
+ *   2. Injecting floating control buttons into every canvas view so the user
+ *      can access plugin features without the command palette.
+ *   3. Persisting and loading user settings via Obsidian's data store.
+ *
+ * Canvas integration note:
+ *   Obsidian does not expose a public API for canvas views. We rely on the
+ *   internal `(view as any).canvas` object which exposes `.nodes` (Map),
+ *   `.edges`, and `.wrapperEl`. This is inherently fragile and every access
+ *   is guarded with null checks so the plugin degrades gracefully if the
+ *   internal API changes.
+ */
+
+import { Plugin, Notice, TFile, ItemView } from 'obsidian';
 import { RenderTimelinesModal } from './RenderTimelinesModal';
 import { RenderIOCCardsModal } from './RenderIOCCardsModal';
-import { MinimalistRenderer } from './MinimalistRenderer';
+import { RenderIOCCards } from './RenderIOCCards';
 import { IOC_TYPES } from './IOCCardsTypes';
-
-interface IOCType {
-    name: string;
-    icon: string;
-    color: string;
-}
+import { PluginSettings, IOCCanvasPluginSettings, DEFAULT_SETTINGS } from './PluginSettings';
 
 export default class IOCCanvasPlugin extends Plugin {
-    settings: any;
-    iocTypes: IOCType[] = [];
-    minimalistOverlay: HTMLElement | null = null;
-    isMinimalistView: boolean = false;
+    /** Typed settings object persisted to data.json. */
+    settings: IOCCanvasPluginSettings = DEFAULT_SETTINGS;
 
+    /** Whether the canvas IOC cards are currently in compact/reduced view. */
+    isReducedView: boolean = false;
+
+    // ---------------------------------------------------------------
+    // Plugin lifecycle
+    // ---------------------------------------------------------------
+
+    /**
+     * Called by Obsidian when the plugin is activated.
+     *
+     * Order of operations:
+     *   1. Load persisted settings from data.json.
+     *   2. Register ribbon icons (sidebar shortcuts).
+     *   3. Register commands (accessible via Ctrl/Cmd+P).
+     *   4. Register the single settings tab from PluginSettings.ts.
+     *   5. Register the canvas context-menu entry.
+     *   6. Listen for active-leaf changes to inject floating buttons.
+     *   7. Perform an initial button injection for the currently open leaf.
+     */
     async onload() {
         console.log('Loading IOC Canvas Plugin');
 
         await this.loadSettings();
-        await this.loadIOCTypes();
 
-        // Add ribbon icon for timeline analysis
+        // --- Ribbon icon: quick access from the left sidebar ---
         this.addRibbonIcon('clock', 'Show Attack Timelines', () => {
             new RenderTimelinesModal(this.app, this).open();
         });
 
-        // Add command for timeline analysis
+        // --- Commands: accessible via the command palette (Ctrl/Cmd+P) ---
+
         this.addCommand({
             id: 'show-timelines',
             name: 'Show Attack Timelines',
@@ -36,35 +66,18 @@ export default class IOCCanvasPlugin extends Plugin {
             }
         });
 
-        // Add command for IOC cards modal
         this.addCommand({
             id: 'show-ioc-cards',
             name: 'Show All IOC Cards',
             callback: () => {
-                new RenderIOCCardsModal(
-                    this.app,
-                    IOC_TYPES,
-                    (iocTypeId: string, osType?: string) => {
-                        console.log('Selected IOC type:', iocTypeId, osType);
-                        new Notice(`Selected: ${iocTypeId}${osType ? ' (' + osType + ')' : ''}`);
-                    }
-                ).open();
+                this.openIOCCardSelector();
             }
         });
 
-        // Add command for minimalist toggle
-        this.addCommand({
-            id: 'toggle-minimalist-view',
-            name: 'Toggle Minimalist View',
-            callback: () => {
-                this.toggleMinimalistView();
-            }
-        });
+        // --- Settings tab: single source of truth from PluginSettings.ts ---
+        this.addSettingTab(new PluginSettings(this.app, this));
 
-        // Add settings tab
-        this.addSettingTab(new IOCCanvasSettingTab(this.app, this));
-
-        // Register canvas menu
+        // --- Canvas context menu: right-click a .canvas file in the file explorer ---
         this.registerEvent(
             this.app.workspace.on('file-menu', (menu, file) => {
                 if (file instanceof TFile && file.extension === 'canvas') {
@@ -80,88 +93,232 @@ export default class IOCCanvasPlugin extends Plugin {
             })
         );
 
-        // Add canvas buttons when canvas loads
+        // --- Canvas button injection ---
+        // Obsidian fires 'active-leaf-change' whenever the user switches tabs.
+        // We hook into this to inject floating control buttons when a canvas
+        // view becomes active.
         this.registerEvent(
             this.app.workspace.on('active-leaf-change', () => {
                 this.addCanvasButtons();
             })
         );
 
-        // Initial check for canvas view
+        // Inject buttons into whatever view is already open at plugin load time.
         this.addCanvasButtons();
     }
 
-    addCanvasButtons() {
-        const activeView = this.app.workspace.getActiveViewOfType(ItemView);
+    /**
+     * Called by Obsidian when the plugin is deactivated or Obsidian closes.
+     * Cleans up all DOM elements injected by the plugin so they do not
+     * persist after disable/uninstall.
+     */
+    onunload() {
+        console.log('Unloading IOC Canvas Plugin');
 
-        if (!activeView || activeView.getViewType() !== 'canvas') {
-            return;
-        }
+        // Remove all injected toolbar elements from canvas controls
+        document.querySelectorAll('.ioc-toolbar').forEach(el => el.remove());
 
-        // Check if buttons already exist
-        if (document.querySelector('.canvas-control-buttons')) {
-            return;
-        }
-
-        const canvasView = activeView.containerEl;
-
-        // Create Timeline Button (Bottom-Left)
-        const timelineButton = document.createElement('button');
-        timelineButton.className = 'canvas-timeline-button';
-        timelineButton.innerHTML = '🕐';
-        timelineButton.setAttribute('aria-label', 'Show Attack Timelines');
-        timelineButton.setAttribute('title', 'Show Attack Timelines');
-        timelineButton.addEventListener('click', () => {
-            new RenderTimelinesModal(this.app, this).open();
-        });
-
-        // Create IOC Cards Button (Bottom-Center)
-        const cardsButton = document.createElement('button');
-        cardsButton.className = 'canvas-cards-button';
-        cardsButton.innerHTML = '📇';
-        cardsButton.setAttribute('aria-label', 'Show IOC Cards');
-        cardsButton.setAttribute('title', 'Show IOC Cards');
-        cardsButton.addEventListener('click', () => {
-            new RenderIOCCardsModal(
-                this.app,
-                IOC_TYPES,
-                (iocTypeId: string, osType?: string) => {
-                    console.log('Selected IOC type:', iocTypeId, osType);
-                    new Notice(`Selected: ${iocTypeId}${osType ? ' (' + osType + ')' : ''}`);
-                }
-            ).open();
-        });
-
-        // Create Minimalist Toggle Button (Right side, below toolbar)
-        const minimalistButton = document.createElement('button');
-        minimalistButton.className = 'canvas-minimalist-button';
-        minimalistButton.innerHTML = '🎨';
-        minimalistButton.setAttribute('aria-label', 'Toggle Minimalist View');
-        minimalistButton.setAttribute('title', 'Toggle Minimalist View');
-        minimalistButton.addEventListener('click', () => {
-            this.toggleMinimalistView();
-        });
-
-        // Create container for bottom buttons
-        const bottomButtonsContainer = document.createElement('div');
-        bottomButtonsContainer.className = 'canvas-bottom-buttons';
-        bottomButtonsContainer.appendChild(timelineButton);
-        bottomButtonsContainer.appendChild(cardsButton);
-
-        // Add buttons to canvas
-        canvasView.appendChild(bottomButtonsContainer);
-        canvasView.appendChild(minimalistButton);
-
-        // Mark that buttons exist
-        const marker = document.createElement('div');
-        marker.className = 'canvas-control-buttons';
-        marker.style.display = 'none';
-        canvasView.appendChild(marker);
+        // Remove reduce view class from any canvas wrappers
+        document.querySelectorAll('.ioc-reduced').forEach(el => el.classList.remove('ioc-reduced'));
     }
 
-    toggleMinimalistView() {
-        const activeView = this.app.workspace.getActiveViewOfType(ItemView);
+    // ---------------------------------------------------------------
+    // Settings persistence
+    // ---------------------------------------------------------------
 
+    /** Load settings from data.json, falling back to defaults for any missing keys. */
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    /** Persist the current settings object to data.json. */
+    async saveSettings() {
+        await this.saveData(this.settings);
+    }
+
+    // ---------------------------------------------------------------
+    // Canvas floating button injection
+    // ---------------------------------------------------------------
+
+    /**
+     * Injects control buttons into Obsidian's native canvas control bar.
+     *
+     * Buttons added:
+     *   - Timeline button: opens the attack-timeline modal.
+     *   - IOC Cards button: opens the IOC card selector.
+     *
+     * Uses the .ioc-toolbar class as a duplicate-injection guard.
+     *
+     * The entire method is wrapped in a try/catch so a failure in button
+     * creation never takes down the plugin.
+     */
+    addCanvasButtons() {
+        try {
+            const activeView = this.app.workspace.getActiveViewOfType(ItemView);
+
+            // Only inject into canvas views
+            if (!activeView || activeView.getViewType() !== 'canvas') {
+                return;
+            }
+
+            const canvasView = activeView.containerEl;
+            if (!canvasView) {
+                return;
+            }
+
+            // Find Obsidian's native canvas controls bar
+            const canvasControls = canvasView.querySelector('.canvas-controls');
+            if (!canvasControls) {
+                return;
+            }
+
+            // Prevent duplicate injection
+            if (canvasControls.querySelector('.ioc-toolbar')) {
+                return;
+            }
+
+            const iocToolbar = document.createElement('div');
+            iocToolbar.className = 'ioc-toolbar';
+
+            // --- Timeline button ---
+            const timelineItem = document.createElement('div');
+            timelineItem.className = 'canvas-control-item';
+            timelineItem.setAttribute('aria-label', 'Show Attack Timelines');
+            timelineItem.setAttribute('title', 'Show Attack Timelines');
+            timelineItem.addEventListener('click', () => {
+                new RenderTimelinesModal(this.app, this).open();
+            });
+            const timelineIcon = document.createElement('div');
+            timelineIcon.className = 'clickable-icon';
+            timelineIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+            timelineItem.appendChild(timelineIcon);
+
+            // --- IOC Cards button ---
+            const cardsItem = document.createElement('div');
+            cardsItem.className = 'canvas-control-item';
+            cardsItem.setAttribute('aria-label', 'Add IOC Card');
+            cardsItem.setAttribute('title', 'Add IOC Card');
+            cardsItem.addEventListener('click', () => {
+                this.openIOCCardSelector();
+            });
+            const cardsIcon = document.createElement('div');
+            cardsIcon.className = 'clickable-icon';
+            cardsIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+            cardsItem.appendChild(cardsIcon);
+
+            // --- Reduce toggle button ---
+            const reduceItem = document.createElement('div');
+            reduceItem.className = 'canvas-control-item';
+            reduceItem.setAttribute('aria-label', 'Toggle Reduce View');
+            reduceItem.setAttribute('title', 'Toggle Reduce View');
+            reduceItem.addEventListener('click', () => {
+                this.toggleReduceView();
+                // Toggle active visual state on the icon
+                const icon = reduceItem.querySelector('.clickable-icon');
+                if (icon) {
+                    icon.classList.toggle('is-active', this.isReducedView);
+                }
+            });
+            const reduceIcon = document.createElement('div');
+            reduceIcon.className = 'clickable-icon';
+            // Minimize/compress SVG icon
+            reduceIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+            reduceItem.appendChild(reduceIcon);
+
+            iocToolbar.appendChild(timelineItem);
+            iocToolbar.appendChild(cardsItem);
+            iocToolbar.appendChild(reduceItem);
+            canvasControls.appendChild(iocToolbar);
+        } catch (err) {
+            // Button injection is non-critical; log and continue
+            console.error('IOC Canvas: failed to inject canvas buttons', err);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Reduce view toggle
+    // ---------------------------------------------------------------
+
+    /**
+     * Toggles the reduced/compact view for IOC cards on the active canvas.
+     * When reduced, CSS hides everything except the code block value, and
+     * nodes are resized to a compact single-line height.
+     */
+    toggleReduceView() {
+        const activeView = this.app.workspace.getActiveViewOfType(ItemView);
+        if (!activeView || activeView.getViewType() !== 'canvas') return;
+
+        const canvas = (activeView as any).canvas;
+        if (!canvas) return;
+
+        this.isReducedView = !this.isReducedView;
+
+        // Add/remove CSS class on the canvas wrapper for CSS-based content hiding
+        const wrapperEl = canvas.wrapperEl;
+        if (wrapperEl) {
+            if (this.isReducedView) {
+                wrapperEl.classList.add('ioc-reduced');
+            } else {
+                wrapperEl.classList.remove('ioc-reduced');
+            }
+        }
+
+        // Resize all text nodes
+        if (canvas.nodes) {
+            canvas.nodes.forEach((node: any) => {
+                if (!node.text) return; // only text nodes (IOC cards have text)
+                if (this.isReducedView) {
+                    // Store original dimensions before reducing
+                    if (!node._iocOriginalHeight) {
+                        node._iocOriginalHeight = node.height;
+                    }
+                    // Resize to compact single-line height
+                    if (node.resize) {
+                        node.resize({ width: node.width, height: 60 });
+                    } else {
+                        node.height = 60;
+                    }
+                } else {
+                    // Restore original height
+                    const originalH = node._iocOriginalHeight || 400;
+                    if (node.resize) {
+                        node.resize({ width: node.width, height: originalH });
+                    } else {
+                        node.height = originalH;
+                    }
+                }
+            });
+        }
+
+        canvas.requestFrame();
+        canvas.requestSave();
+    }
+
+    // ---------------------------------------------------------------
+    // IOC card creation helpers
+    // ---------------------------------------------------------------
+
+    /**
+     * Opens the IOC card selector modal. The callback creates the card on
+     * the active canvas.
+     */
+    openIOCCardSelector() {
+        new RenderIOCCardsModal(
+            this.app,
+            IOC_TYPES,
+            (iocTypeId: string, osType?: string) => {
+                this.createIOCCard(iocTypeId, osType);
+            }
+        ).open();
+    }
+
+    /**
+     * Creates an IOC card on the active canvas.
+     * @param iocTypeId - The snake_case IOC type key from IOC_TYPES
+     * @param osType    - Optional OS variant for hostname cards
+     */
+    createIOCCard(iocTypeId: string, osType?: string) {
+        const activeView = this.app.workspace.getActiveViewOfType(ItemView);
         if (!activeView || activeView.getViewType() !== 'canvas') {
             new Notice('Please open a canvas first');
             return;
@@ -169,190 +326,26 @@ export default class IOCCanvasPlugin extends Plugin {
 
         const canvas = (activeView as any).canvas;
         if (!canvas) {
-            new Notice('Canvas not found');
+            new Notice('Please open a canvas first');
             return;
         }
 
-        if (this.isMinimalistView) {
-            this.hideMinimalistView();
-        } else {
-            this.showMinimalistView(canvas, activeView);
-        }
-    }
-
-    showMinimalistView(canvas: any, activeView: ItemView) {
-        console.log('🎨 Showing minimalist view...');
-
-        // Hide normal canvas
-        const canvasContent = canvas.wrapperEl;
-        if (canvasContent) {
-            canvasContent.style.display = 'none';
+        const iocType = IOC_TYPES[iocTypeId];
+        if (!iocType) {
+            new Notice('Unknown IOC type: ' + iocTypeId);
+            return;
         }
 
-        // Create overlay
-        this.minimalistOverlay = document.createElement('div');
-        this.minimalistOverlay.className = 'minimalist-overlay';
+        const content = RenderIOCCards.createCardContent(iocType, iocTypeId, osType || null);
 
-        // Extract canvas data
-        const canvasData = this.extractCanvasData(canvas);
+        canvas.createTextNode({
+            pos: { x: Math.random() * 400, y: Math.random() * 400 },
+            size: { width: 400, height: 400 },
+            text: content
+        });
+        canvas.requestSave();
 
-        // Render minimalist view
-        MinimalistRenderer.renderMinimalist(this.minimalistOverlay, canvasData);
-
-        // Add to view
-        activeView.containerEl.appendChild(this.minimalistOverlay);
-
-        // Update button state
-        const button = document.querySelector('.canvas-minimalist-button');
-        if (button) {
-            button.classList.add('active');
-            button.innerHTML = '🖼️';
-            (button as HTMLElement).setAttribute('title', 'Show Normal Canvas');
-        }
-
-        this.isMinimalistView = true;
+        new Notice(`Created ${iocType.name} card`);
     }
 
-    hideMinimalistView() {
-        console.log('🖼️ Showing normal canvas...');
-
-        const activeView = this.app.workspace.getActiveViewOfType(ItemView);
-        if (!activeView) return;
-
-        const canvas = (activeView as any).canvas;
-        if (!canvas) return;
-
-        // Show normal canvas
-        const canvasContent = canvas.wrapperEl;
-        if (canvasContent) {
-            canvasContent.style.display = '';
-        }
-
-        // Remove overlay
-        if (this.minimalistOverlay) {
-            this.minimalistOverlay.remove();
-            this.minimalistOverlay = null;
-        }
-
-        // Update button state
-        const button = document.querySelector('.canvas-minimalist-button');
-        if (button) {
-            button.classList.remove('active');
-            button.innerHTML = '🎨';
-            (button as HTMLElement).setAttribute('title', 'Toggle Minimalist View');
-        }
-
-        this.isMinimalistView = false;
-    }
-
-    extractCanvasData(canvas: any): any {
-        const nodes: any[] = [];
-        const connections: any[] = [];
-        const nodeData = new Map();
-
-        // Extract nodes
-        if (canvas.nodes) {
-            canvas.nodes.forEach((node: any) => {
-                if (node.unknownData && node.unknownData.type) {
-                    const iocType = this.iocTypes.find((t: IOCType) => t.name === node.unknownData.type);
-
-                    const nodeInfo = {
-                        id: node.id,
-                        type: node.unknownData.type,
-                        icon: iocType?.icon || '📄',
-                        color: node.color || iocType?.color || '#888888',
-                        value: node.unknownData.value || '',
-                        time: node.unknownData.time || null,
-                        x: node.x,
-                        y: node.y,
-                        width: node.width,
-                        height: node.height
-                    };
-
-                    nodeData.set(node.id, nodeInfo);
-                    nodes.push(nodeInfo);
-                }
-            });
-        }
-
-        // Extract connections
-        if (canvas.edges) {
-            canvas.edges.forEach((edge: any) => {
-                const fromId = edge.from?.node?.id;
-                const toId = edge.to?.node?.id;
-
-                if (fromId && toId && nodeData.has(fromId) && nodeData.has(toId)) {
-                    connections.push({
-                        from: fromId,
-                        to: toId,
-                        label: edge.label || ''
-                    });
-                }
-            });
-        }
-
-        return { nodes, connections };
-    }
-
-    async loadIOCTypes() {
-        const defaultIOCTypes: IOCType[] = [
-            { name: 'IP Address', icon: '🌐', color: '#FF5722' },
-            { name: 'Domain', icon: '🌍', color: '#2196F3' },
-            { name: 'URL', icon: '🔗', color: '#4CAF50' },
-            { name: 'Email', icon: '📧', color: '#9C27B0' },
-            { name: 'File Hash', icon: '#', color: '#00BCD4' },
-            { name: 'Registry Key', icon: '🗝️', color: '#FF9800' },
-            { name: 'Process', icon: '⚙️', color: '#795548' },
-            { name: 'User Account', icon: '👤', color: '#607D8B' },
-            { name: 'Command Line', icon: '💻', color: '#8BC34A' },
-            { name: 'C2 Server', icon: '🎯', color: '#F44336' }
-        ];
-
-        this.iocTypes = this.settings.iocTypes || defaultIOCTypes;
-    }
-
-    async loadSettings() {
-        this.settings = Object.assign({}, await this.loadData());
-    }
-
-    async saveSettings() {
-        await this.saveData(this.settings);
-    }
-
-    onunload() {
-        console.log('Unloading IOC Canvas Plugin');
-
-        // Clean up minimalist view
-        if (this.minimalistOverlay) {
-            this.minimalistOverlay.remove();
-        }
-
-        // Remove all canvas buttons
-        document.querySelectorAll('.canvas-timeline-button, .canvas-cards-button, .canvas-minimalist-button, .canvas-bottom-buttons, .canvas-control-buttons').forEach(el => el.remove());
-    }
-}
-
-class IOCCanvasSettingTab extends PluginSettingTab {
-    plugin: IOCCanvasPlugin;
-
-    constructor(app: App, plugin: IOCCanvasPlugin) {
-        super(app, plugin);
-        this.plugin = plugin;
-    }
-
-    display(): void {
-        const { containerEl } = this;
-        containerEl.empty();
-        containerEl.createEl('h2', { text: 'IOC Canvas Settings' });
-
-        new Setting(containerEl)
-            .setName('IOC Types')
-            .setDesc('Configure IOC card types and their properties')
-            .addButton(button => button
-                .setButtonText('Manage IOC Types')
-                .onClick(() => {
-                    new Notice('IOC Types management coming soon!');
-                })
-            );
-    }
 }

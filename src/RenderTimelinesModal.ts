@@ -1,11 +1,30 @@
+/**
+ * RenderTimelinesModal.ts - Full-screen dual-tab timeline visualization.
+ *
+ * Opens a modal with two tabs:
+ *   - Time Timeline: shows all IOC cards sorted chronologically by their
+ *     "Time of Event" field. Each item is a colored card with the IOC icon,
+ *     value, timestamp, and optional Splunk/MITRE metadata.
+ *   - Link Timeline: shows a layered directed graph built from canvas
+ *     edges between IOC nodes. Nodes at the same depth are displayed
+ *     side-by-side horizontally, with SVG arrows showing all connections.
+ *
+ * Data flows:
+ *   TimeTimelineProcessor  -->  renderEnhancedTimeTimeline()
+ *   LinkTimelineProcessor  -->  renderEnhancedLayeredTimeline()
+ *
+ * All DOM is built with Obsidian's createEl/createDiv API; colors are applied
+ * via inline styles using each IOC type's color from the card data.
+ */
 import { App, Modal, Notice } from 'obsidian';
-import { LinkTimelineProcessor } from './LinkTimelineProcessing';
+import { LinkTimelineProcessor, LayeredNode, GraphEdge } from './LinkTimelineProcessing';
 import { TimeTimelineProcessor } from './TimeTimelineProcessing';
+import { IOCNodeData } from './IOCParser';
 
 export class RenderTimelinesModal extends Modal {
     private plugin: any;
+    /** Which tab is currently visible. */
     private activeTab: 'time' | 'link';
-    private collapsedChains: Set<number>;
     private timeProcessor: TimeTimelineProcessor;
     private linkProcessor: LinkTimelineProcessor;
 
@@ -13,11 +32,11 @@ export class RenderTimelinesModal extends Modal {
         super(app);
         this.plugin = plugin;
         this.activeTab = 'time';
-        this.collapsedChains = new Set();
         this.timeProcessor = new TimeTimelineProcessor(app, plugin, plugin.iocTypes);
         this.linkProcessor = new LinkTimelineProcessor(app, plugin, plugin.iocTypes);
     }
 
+    /** Builds the modal header with tab buttons and renders the default (time) tab. */
     onOpen(): void {
         const { contentEl } = this;
         this.modalEl.classList.add('timeline-modal-fullscreen');
@@ -46,6 +65,7 @@ export class RenderTimelinesModal extends Modal {
         this.renderTabContent(contentEl);
     }
 
+    /** Toggles the `active` CSS class between the two tab buttons. */
     private updateTabStyles(timeTab: HTMLElement, linkTab: HTMLElement): void {
         timeTab.classList.remove('active');
         linkTab.classList.remove('active');
@@ -57,6 +77,10 @@ export class RenderTimelinesModal extends Modal {
         }
     }
 
+    /**
+     * Swaps out the tab content area. Removes the previous content DOM node and
+     * creates a fresh one, then delegates to the appropriate renderer.
+     */
     private renderTabContent(contentEl: HTMLElement): void {
         const existingContent = contentEl.querySelector('.timeline-tab-content');
         if (existingContent) {
@@ -68,10 +92,15 @@ export class RenderTimelinesModal extends Modal {
         if (this.activeTab === 'time') {
             this.renderEnhancedTimeTimeline(contentArea);
         } else if (this.activeTab === 'link') {
-            this.renderEnhancedTreeLinkTimeline(contentArea);
+            this.renderEnhancedLayeredTimeline(contentArea);
         }
     }
 
+    /**
+     * Renders the chronological Time Timeline. Extracts IOC data from canvas
+     * nodes via the time processor, sorts by event timestamp, and renders each
+     * IOC as a colored card with a gradient connector to the next card.
+     */
     private renderEnhancedTimeTimeline(container: HTMLElement): void {
         const iocData = this.timeProcessor.extractFixedIOCData();
 
@@ -83,6 +112,7 @@ export class RenderTimelinesModal extends Modal {
             return;
         }
 
+        // Sort ascending by event time so the earliest IOC appears first
         iocData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
 
         const timelineContainer = container.createDiv('timeline-container');
@@ -90,11 +120,15 @@ export class RenderTimelinesModal extends Modal {
         iocData.forEach((ioc, index) => {
             const timelineItem = timelineContainer.createDiv('timeline-item');
 
+            // Apply the IOC's color to background gradient and shadow for visual grouping
             timelineItem.style.setProperty('--ioc-color', ioc.color);
             timelineItem.style.setProperty('--ioc-color-30', `${ioc.color}30`);
             timelineItem.style.background = `linear-gradient(135deg, ${ioc.color}15 0%, ${ioc.color}05 100%)`;
             timelineItem.style.boxShadow = `0 4px 12px ${ioc.color}25`;
+            timelineItem.style.borderColor = ioc.color;
 
+            // Gradient connector between this card and the next one; blends the
+            // two IOC colors to visually link consecutive timeline events
             if (index < iocData.length - 1) {
                 const connector = timelineItem.createDiv('timeline-connector');
                 connector.style.background = `linear-gradient(180deg, ${ioc.color} 0%, ${iocData[index + 1].color} 100%)`;
@@ -103,6 +137,7 @@ export class RenderTimelinesModal extends Modal {
             const iconContainer = timelineItem.createDiv('timeline-icon');
             iconContainer.innerHTML = ioc.icon;
             iconContainer.style.background = `${ioc.color}20`;
+            iconContainer.style.borderColor = ioc.color;
 
             const detailsContainer = timelineItem.createDiv('timeline-details');
 
@@ -145,113 +180,239 @@ export class RenderTimelinesModal extends Modal {
         });
     }
 
-    private renderEnhancedTreeLinkTimeline(container: HTMLElement): void {
-        console.log('🔍 Starting enhanced tree-like link timeline analysis...');
+    /**
+     * Renders the Link Timeline as a layered DAG with horizontal layout.
+     * Each node appears exactly once at its maximum depth, nodes at the same
+     * depth are displayed side-by-side, and SVG arrows show all connections.
+     */
+    private renderEnhancedLayeredTimeline(container: HTMLElement): void {
+        console.log('Starting layered DAG link timeline rendering...');
         const linkData = this.linkProcessor.extractEnhancedLinkData();
 
-        if (linkData.chains.length === 0 && linkData.isolatedNodes.length === 0) {
+        if (linkData.layers.length === 0 && linkData.isolatedNodes.length === 0) {
             const emptyMessage = container.createEl('div', { cls: 'timeline-empty-message' });
             emptyMessage.innerHTML = `
-                <h3>🔗 Link Timeline Analysis</h3>
+                <h3>Link Timeline Analysis</h3>
                 <p>No connections found between IOC cards.</p>
             `;
             return;
         }
 
-        const treeContainer = container.createDiv('tree-timeline-container');
+        const dagContainer = container.createDiv('dag-timeline-container');
 
-        if (linkData.chains.length > 0) {
-            linkData.chains.forEach((chain: any, chainIndex: number) => {
-                this.renderEnhancedTreeChain(treeContainer, chain, chainIndex);
+        // Create SVG container for arrows (positioned absolutely behind the nodes)
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const svgContainer = document.createElementNS(svgNS, 'svg');
+        svgContainer.classList.add('dag-arrows-svg');
+        svgContainer.style.position = 'absolute';
+        svgContainer.style.top = '0';
+        svgContainer.style.left = '0';
+        svgContainer.style.width = '100%';
+        svgContainer.style.height = '100%';
+        svgContainer.style.pointerEvents = 'none';
+        svgContainer.style.zIndex = '0';
+        dagContainer.appendChild(svgContainer);
+
+        // Create layers container (will hold node rows)
+        const layersContainer = dagContainer.createDiv('dag-layers-container');
+        layersContainer.style.position = 'relative';
+        layersContainer.style.zIndex = '1';
+
+        // Map to store node positions for arrow drawing
+        const nodePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
+
+        // Render each layer
+        linkData.layers.forEach((layer: LayeredNode[], layerIndex: number) => {
+            if (layer.length === 0) return;
+
+            const layerRow = layersContainer.createDiv('dag-layer-row');
+            layerRow.setAttribute('data-layer', layerIndex.toString());
+
+            layer.forEach((node: LayeredNode) => {
+                const nodeWrapper = layerRow.createDiv('dag-node-wrapper');
+                nodeWrapper.setAttribute('data-node-id', node.nodeId);
+
+                this.renderLayeredNodeCard(nodeWrapper, node.data);
+
+                // Store position for arrow drawing (we'll update positions after render)
+            });
+        });
+
+        // Render isolated nodes at the bottom if any
+        if (linkData.isolatedNodes.length > 0) {
+            const isolatedSection = layersContainer.createDiv('dag-isolated-section');
+            const isolatedHeader = isolatedSection.createEl('h4', {
+                text: 'Isolated Nodes (No Connections)',
+                cls: 'dag-isolated-header'
+            });
+
+            const isolatedContainer = isolatedSection.createDiv('dag-isolated-nodes');
+            linkData.isolatedNodes.forEach((node: IOCNodeData) => {
+                const nodeWrapper = isolatedContainer.createDiv('dag-node-wrapper');
+                this.renderLayeredNodeCard(nodeWrapper, node);
             });
         }
+
+        // After rendering, calculate node positions and draw arrows
+        setTimeout(() => {
+            this.calculateNodePositions(dagContainer, nodePositions);
+            this.drawArrows(svgContainer, linkData.edges, nodePositions);
+        }, 50);
     }
 
-    private renderEnhancedTreeChain(container: HTMLElement, chain: any[], chainIndex: number): void {
-        const isCollapsed = this.collapsedChains.has(chainIndex);
-        const chainColor = chain[0]?.color || 'var(--interactive-accent)';
+    /**
+     * Calculate the center position of each node for arrow drawing
+     */
+    private calculateNodePositions(
+        container: HTMLElement,
+        positions: Map<string, { x: number; y: number; width: number; height: number }>
+    ): void {
+        const containerRect = container.getBoundingClientRect();
+        const nodeWrappers = container.querySelectorAll('.dag-node-wrapper[data-node-id]');
 
-        const chainHeader = container.createDiv('tree-chain-header');
-        chainHeader.style.setProperty('--chain-color', chainColor);
-        chainHeader.style.background = `linear-gradient(135deg, ${chainColor}15 0%, ${chainColor}05 100%)`;
-        chainHeader.style.boxShadow = `0 4px 12px ${chainColor}25`;
+        nodeWrappers.forEach((wrapper: Element) => {
+            const nodeId = wrapper.getAttribute('data-node-id');
+            if (!nodeId) return;
 
-        const triangle = chainHeader.createDiv('chain-triangle');
-        triangle.textContent = isCollapsed ? '▶' : '▼';
+            const rect = wrapper.getBoundingClientRect();
+            positions.set(nodeId, {
+                x: rect.left + rect.width / 2 - containerRect.left,
+                y: rect.top + rect.height / 2 - containerRect.top,
+                width: rect.width,
+                height: rect.height
+            });
+        });
+    }
 
-        const chainTitle = chainHeader.createDiv('chain-title');
-        chainTitle.textContent = `Chain ${chainIndex + 1}: ${chain.length} nodes`;
+    /**
+     * Draw SVG arrows between connected nodes
+     */
+    private drawArrows(
+        svgContainer: SVGSVGElement,
+        edges: GraphEdge[],
+        positions: Map<string, { x: number; y: number; width: number; height: number }>
+    ): void {
+        const svgNS = 'http://www.w3.org/2000/svg';
 
-        const chainContent = container.createDiv('tree-chain-content');
-        chainContent.setAttribute('data-collapsed', isCollapsed.toString());
+        // Create arrow marker definition
+        const defs = document.createElementNS(svgNS, 'defs');
+        const marker = document.createElementNS(svgNS, 'marker');
+        marker.setAttribute('id', 'arrowhead');
+        marker.setAttribute('markerWidth', '10');
+        marker.setAttribute('markerHeight', '10');
+        marker.setAttribute('refX', '9');
+        marker.setAttribute('refY', '3');
+        marker.setAttribute('orient', 'auto');
+        marker.setAttribute('markerUnits', 'strokeWidth');
 
-        chainHeader.addEventListener('click', () => {
-            if (this.collapsedChains.has(chainIndex)) {
-                this.collapsedChains.delete(chainIndex);
-                triangle.textContent = '▼';
-                chainContent.setAttribute('data-collapsed', 'false');
-            } else {
-                this.collapsedChains.add(chainIndex);
-                triangle.textContent = '▶';
-                chainContent.setAttribute('data-collapsed', 'true');
+        const polygon = document.createElementNS(svgNS, 'polygon');
+        polygon.setAttribute('points', '0 0, 10 3, 0 6');
+        polygon.setAttribute('fill', 'var(--text-muted)');
+        marker.appendChild(polygon);
+        defs.appendChild(marker);
+        svgContainer.appendChild(defs);
+
+        // Draw each edge
+        edges.forEach((edge: GraphEdge) => {
+            const fromPos = positions.get(edge.fromId);
+            const toPos = positions.get(edge.toId);
+
+            if (!fromPos || !toPos) return;
+
+            // Calculate start and end points (from bottom of source to top of target)
+            const x1 = fromPos.x;
+            const y1 = fromPos.y + fromPos.height / 2;
+            const x2 = toPos.x;
+            const y2 = toPos.y - toPos.height / 2;
+
+            // Create curved path for better visualization
+            const midY = (y1 + y2) / 2;
+            const path = document.createElementNS(svgNS, 'path');
+            const pathData = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+
+            path.setAttribute('d', pathData);
+            path.setAttribute('stroke', 'var(--text-muted)');
+            path.setAttribute('stroke-width', '2');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('marker-end', 'url(#arrowhead)');
+            path.setAttribute('opacity', '0.6');
+            path.classList.add('dag-arrow');
+
+            svgContainer.appendChild(path);
+
+            // Add edge label if present
+            if (edge.label && edge.label.trim()) {
+                const text = document.createElementNS(svgNS, 'text');
+                text.setAttribute('x', ((x1 + x2) / 2).toString());
+                text.setAttribute('y', midY.toString());
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('fill', 'var(--text-muted)');
+                text.setAttribute('font-size', '11px');
+                text.setAttribute('font-weight', '600');
+                text.textContent = edge.label;
+                svgContainer.appendChild(text);
             }
         });
-
-        chain.forEach((node: any, nodeIndex: number) => {
-            this.renderEnhancedTreeNode(chainContent, node, nodeIndex, chain.length);
-        });
     }
 
-    private renderEnhancedTreeNode(container: HTMLElement, node: any, nodeIndex: number, totalNodes: number): void {
-        const nodeContainer = container.createDiv('tree-node');
+    /**
+     * Renders a single layered node card with full IOC details.
+     */
+    private renderLayeredNodeCard(container: HTMLElement, node: IOCNodeData): void {
         const nodeColor = node.color || 'var(--background-modifier-border)';
 
-        nodeContainer.style.setProperty('--node-color', nodeColor);
+        const nodeContainer = container.createDiv('dag-node');
         nodeContainer.style.background = `linear-gradient(135deg, ${nodeColor}15 0%, ${nodeColor}05 100%)`;
         nodeContainer.style.boxShadow = `0 4px 12px ${nodeColor}25`;
+        nodeContainer.style.borderColor = nodeColor;
 
-        if (nodeIndex < totalNodes - 1) {
-            const connector = nodeContainer.createDiv('tree-connector');
+        const nodeHeader = nodeContainer.createDiv('dag-node-header');
 
-            const edgeLabel = node.edgeLabel;
-            if (edgeLabel && edgeLabel.trim()) {
-                const labelDiv = nodeContainer.createDiv('edge-label');
-                labelDiv.textContent = edgeLabel;
-            }
-        }
-
-        const nodeHeader = nodeContainer.createDiv('tree-node-header');
-
-        const iconDiv = nodeHeader.createDiv('tree-node-icon');
-        iconDiv.innerHTML = node.icon || '📄';
+        const iconDiv = nodeHeader.createDiv('dag-node-icon');
+        iconDiv.innerHTML = node.icon || '';
         iconDiv.style.background = `${nodeColor}20`;
 
-        const nodeType = nodeHeader.createDiv('tree-node-type');
+        const nodeType = nodeHeader.createDiv('dag-node-type');
         nodeType.textContent = node.type || 'Unknown IOC';
 
-        const nodeDetails = nodeContainer.createDiv('tree-node-details');
+        const nodeDetails = nodeContainer.createDiv('dag-node-details');
 
         if (node.value && node.value.trim()) {
-            const valueContainer = nodeDetails.createDiv('tree-value-container');
-            const valueLabel = valueContainer.createDiv('tree-value-label');
+            const valueContainer = nodeDetails.createDiv('dag-node-value-container');
+            const valueLabel = valueContainer.createDiv('dag-node-value-label');
             valueLabel.textContent = 'Value';
-            const valueEl = valueContainer.createDiv('tree-value-text');
+            const valueEl = valueContainer.createDiv('dag-node-value-text');
             valueEl.textContent = node.value;
         }
 
         if (node.time && node.time.trim()) {
-            const timeContainer = nodeDetails.createDiv('tree-time-container');
-            timeContainer.innerHTML = `🕐 ${node.time}`;
+            const timeEl = nodeDetails.createDiv('dag-node-time');
+            timeEl.innerHTML = `🕐 Time: ${node.time}`;
+        }
+
+        if (node.splunkQuery && node.splunkQuery.trim()) {
+            const splunkEl = nodeDetails.createDiv('dag-node-splunk');
+            splunkEl.innerHTML = `🔍 Splunk: ${node.splunkQuery}`;
+        }
+
+        if (node.tactic && node.tactic.trim()) {
+            const tacticEl = nodeDetails.createDiv('dag-node-tactic');
+            tacticEl.innerHTML = `⚔️ Tactic: ${node.tactic}`;
+        }
+
+        if (node.technique && node.technique.trim()) {
+            const techniqueEl = nodeDetails.createDiv('dag-node-technique');
+            techniqueEl.innerHTML = `🎯 Technique: ${node.technique}`;
         }
 
         nodeContainer.addEventListener('mouseover', () => {
             nodeContainer.style.boxShadow = `0 8px 20px ${nodeColor}35`;
         });
-
         nodeContainer.addEventListener('mouseout', () => {
             nodeContainer.style.boxShadow = `0 4px 12px ${nodeColor}25`;
         });
     }
+
 
     onClose(): void {
         const { contentEl } = this;
