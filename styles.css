@@ -255,10 +255,12 @@
 
 /* Container for layers (positioned relative for SVG absolute positioning) */
 .dag-layers-container {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 80px;
     min-width: max-content;
+    z-index: 1;
 }
 
 /* Each layer row displays nodes side-by-side */
@@ -362,7 +364,13 @@
 
 /* SVG arrows styling */
 .dag-arrows-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     pointer-events: none;
+    z-index: 0;
 }
 
 .dag-arrow {
