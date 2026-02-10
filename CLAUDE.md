@@ -23,14 +23,14 @@ The build outputs `main.js` directly in the project root (consumed by Obsidian).
 **IOC Type System:**
 - `IOCCardsTypes.ts` — Defines the `IOC_TYPES` constant (16 types: IP Address, Domain, File Hash, URL, Email, Hostname, YARA Rule, Sigma Rule, Registry Key, Process Name, Network, Command Line, File, Note, DLL, C2). Each type has `name`, `icon`, `color`, `fields[]`, `svg`, and optional `os_icons` (Hostname has Windows/macOS/Linux variants).
 - `IOCCardFactory.ts` — Static CRUD helper for runtime manipulation of `IOC_TYPES`.
-- `RenderIOCCards.ts` — Generates markdown content for new IOC cards (HTML header with inline SVG + markdown fields as plain text + timestamp/Splunk/MITRE fields). Field values are rendered as bold labels followed by plain text (no code blocks), making cards cleaner and more readable. Called by `main.ts` `createIOCCard()` method.
+- `RenderIOCCards.ts` — Generates markdown content for new IOC cards (HTML header with inline SVG + markdown fields with blank lines for user input + timestamp/Splunk/MITRE fields). Field values are entered by users in the blank space after field labels. **No separators are included in the template** - users type values directly after field labels, and the parser uses the next field or metadata section as the delimiter. Called by `main.ts` `createIOCCard()` method.
 
 **Shared IOC Parsing:**
-- `IOCParser.ts` — Shared module that extracts IOC data from canvas node markdown text. Used by both timeline processors. Exports `parseIOCNode()` and `IOCNodeData` interface. Handles IOC type detection (order-dependent regex), value extraction from code blocks, time/Splunk/MITRE field parsing, and icon/color lookup from `IOC_TYPES`.
+- `IOCParser.ts` — Shared module that extracts IOC data from canvas node markdown text. Used by both timeline processors. Exports `parseIOCNode()` and `IOCNodeData` interface. Handles IOC type detection (order-dependent regex), value extraction (looks for content between field label and next delimiter - either `-----` separator or next field label or "Time of Event"), time/Splunk/MITRE field parsing, and icon/color lookup from `IOC_TYPES`. **Includes extensive debug logging** for troubleshooting value extraction issues.
 
 **Timeline Processing (two modes):**
-- `TimeTimelineProcessing.ts` — Extracts IOC data from canvas nodes via shared `IOCParser`, returns flat array for chronological sorting.
-- `LinkTimelineProcessing.ts` — Builds hierarchical tree structure by analyzing canvas edges between IOC nodes. Handles both live canvas Map format (`edge.from.node.id`) and serialized JSON format (`edge.fromNode`). Uses DFS to build trees from root nodes (no incoming edges). **Key feature:** Each node appears exactly once in the tree at its proper hierarchical position. Prevents cycles and handles orphaned connected components by creating separate tree roots. Returns array of TreeNode objects with parent-child relationships.
+- `TimeTimelineProcessing.ts` — Extracts IOC data from canvas nodes via shared `IOCParser`, returns flat array for chronological sorting. **Includes comprehensive debug logging** tracking node processing, IOC detection, value extraction success/failure, and summary statistics.
+- `LinkTimelineProcessing.ts` — Builds hierarchical tree structure by analyzing canvas edges between IOC nodes. Handles both live canvas Map format (`edge.from.node.id`) and serialized JSON format (`edge.fromNode`). Uses BFS to assign nodes to layers by maximum depth from roots (no incoming edges). **Key feature:** Each node appears exactly once at its calculated depth layer. Prevents cycles and handles orphaned connected components. Returns layered DAG structure with edges for arrow rendering. **Includes step-by-step debug logging** showing node parsing, edge processing, DAG construction, and layer-by-layer breakdown.
 - `IOCParser.ts` — Shared parsing logic used by both processors.
 
 **UI/Modals:**
@@ -50,7 +50,8 @@ The build outputs `main.js` directly in the project root (consumed by Obsidian).
 ## Key Patterns
 
 - IOC card content is **markdown with embedded HTML** for the header. IOCParser detects IOC types by regex-matching type names (e.g., `/IP Address/i`) against node text content — pattern order matters (e.g., "File Hash" must match before "File").
-- **IOC card fields** are rendered as plain text with bold labels (e.g., `**Field:** value`), NOT wrapped in code blocks. This makes cards cleaner and more readable while still being parseable by IOCParser.
+- **IOC card field format**: Cards are created with field labels followed by blank lines for user input. Users type values after the field labels. The parser extracts the **first field's value** as the primary "value" for timeline display (e.g., for Hostname cards, the "hostname" field is extracted; for File Hash cards, the "hash" field). No separators are included in the card template - the parser uses the next field label or "Time of Event:" as the delimiter.
+- **Debug logging**: Extensive console.debug() output tracks the entire parsing and rendering pipeline from card creation through value extraction to timeline display. Check the browser console when investigating value display issues.
 - Colors are defined per-IOC-type and applied via inline CSS variables and styles throughout the UI.
 - The plugin uses Obsidian's `createEl`/`createDiv` DOM API for building UI, not frameworks.
 - Plugin buttons (Timeline, Add Card, Reduce) are injected into Obsidian's native `.canvas-controls` bar as `.ioc-toolbar` > `.canvas-control-item` > `.clickable-icon` elements to match the native canvas button style.

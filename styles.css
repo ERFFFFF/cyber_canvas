@@ -374,12 +374,31 @@
 }
 
 .dag-arrow {
-    transition: opacity 0.2s ease;
+    transition: all 0.2s ease;
 }
 
 .dag-arrow:hover {
     opacity: 1 !important;
     stroke-width: 3;
+}
+
+/* Trunk line styling (shared source for multiple arrows) */
+.dag-arrow-trunk {
+    stroke: var(--interactive-accent);
+    stroke-width: 3;
+    opacity: 0.8;
+}
+
+/* Branch line styling (individual arrows from trunk) */
+.dag-arrow-branch {
+    stroke: var(--text-muted);
+    stroke-width: 2;
+    opacity: 0.6;
+}
+
+.dag-arrow-branch:hover {
+    stroke: var(--interactive-accent);
+    opacity: 0.9;
 }
 
 /* Section for isolated nodes */

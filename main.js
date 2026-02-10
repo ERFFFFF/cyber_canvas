@@ -283,11 +283,116 @@ function detectIOCType(text) {
   return "";
 }
 function extractValue(text) {
-  const match = text.match(/```([\s\S]*?)```/);
-  if (match && match[1] && match[1].trim()) {
-    return match[1].trim();
+  console.log("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501");
+  console.log("[IOCParser] extractValue - ===== STARTING VALUE EXTRACTION =====");
+  console.log("[IOCParser] extractValue - Input text length:", text.length);
+  console.log("[IOCParser] extractValue - Full input text:");
+  console.log(text);
+  console.log("[IOCParser] extractValue - First 400 chars:", text.substring(0, 400));
+  console.log("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501");
+  console.log("[IOCParser] extractValue - Checking for legacy code block format...");
+  const codeBlockMatch = text.match(/```([\s\S]*?)```/);
+  if (codeBlockMatch && codeBlockMatch[1] && codeBlockMatch[1].trim()) {
+    const value2 = codeBlockMatch[1].trim();
+    console.log("[IOCParser] extractValue - \u2713 Found code block value:", value2);
+    console.log("[IOCParser] extractValue - ===== EXTRACTION COMPLETE (code block) =====");
+    return value2;
   }
-  return "";
+  console.log("[IOCParser] extractValue - \u2717 No code block found, proceeding with field extraction");
+  console.log('[IOCParser] extractValue - Splitting by HTML header tag "</div></div>"...');
+  const parts = text.split("</div></div>");
+  console.log("[IOCParser] extractValue - Split resulted in", parts.length, "parts");
+  if (parts.length > 1) {
+    console.log("[IOCParser] extractValue - Part 0 (header) length:", parts[0].length);
+    console.log("[IOCParser] extractValue - Part 1 (content) length:", parts[1].length);
+  }
+  if (parts.length < 2) {
+    console.log("[IOCParser] extractValue - \u2717 ERROR: No HTML header found!");
+    console.log('[IOCParser] extractValue - This means "</div></div>" was not found in the card text');
+    console.log("[IOCParser] extractValue - ===== EXTRACTION FAILED (no header) =====");
+    return "";
+  }
+  console.log("[IOCParser] extractValue - \u2713 HTML header found, processing content...");
+  let afterHeader = parts[1].trim();
+  console.log("[IOCParser] extractValue - ===== CONTENT AFTER HEADER (FULL TEXT) =====");
+  console.log('"""');
+  console.log(afterHeader);
+  console.log('"""');
+  console.log("[IOCParser] extractValue - afterHeader length:", afterHeader.length);
+  console.log("[IOCParser] extractValue - First 400 chars:", afterHeader.substring(0, 400));
+  console.log("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501");
+  console.log("[IOCParser] extractValue - Searching for first field label (pattern: [text]:)...");
+  const fieldMatch = afterHeader.match(/[^:\n]+:\s*/);
+  if (!fieldMatch) {
+    console.log("[IOCParser] extractValue - \u2717 ERROR: No field label found!");
+    console.log("[IOCParser] extractValue - afterHeader starts with:", JSON.stringify(afterHeader.substring(0, 100)));
+    console.log('[IOCParser] extractValue - Looking for pattern like "fieldname: \\n"');
+    console.log("[IOCParser] extractValue - ===== EXTRACTION FAILED (no field label) =====");
+    return "";
+  }
+  const firstFieldName = fieldMatch[0].trim();
+  console.log("[IOCParser] extractValue - \u2713 Found FIRST field:", JSON.stringify(firstFieldName));
+  console.log("[IOCParser] extractValue - Field match raw text:", JSON.stringify(fieldMatch[0]));
+  console.log("[IOCParser] extractValue - Field match index:", fieldMatch.index, "length:", fieldMatch[0].length);
+  console.log("[IOCParser] extractValue - This field will be used as the card VALUE");
+  console.log("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501");
+  console.log("[IOCParser] extractValue - Extracting content after field label...");
+  const afterFieldLabel = afterHeader.substring(fieldMatch.index + fieldMatch[0].length);
+  console.log("[IOCParser] extractValue - ===== CONTENT AFTER FIELD LABEL (should contain value) =====");
+  console.log('"""');
+  console.log(afterFieldLabel);
+  console.log('"""');
+  console.log("[IOCParser] extractValue - afterFieldLabel length:", afterFieldLabel.length);
+  console.log("[IOCParser] extractValue - First 300 chars:", afterFieldLabel.substring(0, 300));
+  console.log("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501");
+  console.log("[IOCParser] extractValue - Searching for value delimiter (separator or next field)...");
+  const separatorMatch = afterFieldLabel.match(/\n?-----/);
+  const nextFieldMatch = afterFieldLabel.match(/\n([^:\n]+:\s*)/);
+  let value;
+  let delimiterIndex;
+  let delimiterType;
+  if (separatorMatch && separatorMatch.index !== void 0) {
+    delimiterIndex = separatorMatch.index;
+    delimiterType = "separator (-----)";
+  }
+  if (nextFieldMatch && nextFieldMatch.index !== void 0) {
+    if (delimiterIndex === void 0 || nextFieldMatch.index < delimiterIndex) {
+      delimiterIndex = nextFieldMatch.index;
+      delimiterType = "next field";
+    }
+  }
+  if (delimiterIndex === void 0) {
+    console.log("[IOCParser] extractValue - WARNING: No delimiter found!");
+    console.log("[IOCParser] extractValue - Searching for Time of Event as fallback...");
+    const timeIndex = afterFieldLabel.indexOf("Time of Event:");
+    if (timeIndex === -1) {
+      value = afterFieldLabel;
+      console.log("[IOCParser] extractValue - No Time of Event either, using all remaining content");
+    } else {
+      value = afterFieldLabel.substring(0, timeIndex);
+      console.log("[IOCParser] extractValue - Extracted until Time of Event at index", timeIndex);
+    }
+  } else {
+    value = afterFieldLabel.substring(0, delimiterIndex);
+    console.log(`[IOCParser] extractValue - SUCCESS: Found ${delimiterType} at index`, delimiterIndex);
+    console.log("[IOCParser] extractValue - Raw value (before trim):", JSON.stringify(value));
+    console.log("[IOCParser] extractValue - Raw value length:", value.length);
+  }
+  console.log("[IOCParser] extractValue - Trimming whitespace from extracted value...");
+  const trimmedValue = value.trim();
+  console.log("[IOCParser] extractValue - ===== FINAL EXTRACTED VALUE =====");
+  console.log("[IOCParser] extractValue - Value (trimmed):", JSON.stringify(trimmedValue));
+  console.log("[IOCParser] extractValue - Value length:", trimmedValue.length);
+  console.log("[IOCParser] extractValue - Value is empty?", trimmedValue.length === 0);
+  if (trimmedValue.length === 0) {
+    console.log("[IOCParser] extractValue - \u26A0\uFE0F  WARNING: Extracted value is EMPTY!");
+    console.log("[IOCParser] extractValue - This means no content was found between field label and separator");
+  } else {
+    console.log("[IOCParser] extractValue - \u2713 SUCCESS: Value extracted successfully");
+  }
+  console.log("[IOCParser] extractValue - ===== EXTRACTION COMPLETE =====");
+  console.log("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501");
+  return trimmedValue;
 }
 function extractTime(text) {
   const timePatterns = [
@@ -342,22 +447,38 @@ function lookupTypeVisuals(iocType, fallbackColor) {
   return { icon, color };
 }
 function parseIOCNode(node) {
+  console.log("[IOCParser] parseIOCNode - Processing node ID:", node.id);
   if (!node.text) {
+    console.log("[IOCParser] parseIOCNode - Node has no text, skipping");
     return null;
   }
   const text = node.text;
+  console.log("[IOCParser] parseIOCNode - Node text length:", text.length);
   const iocType = detectIOCType(text);
+  console.log("[IOCParser] parseIOCNode - Detected IOC type:", iocType || "NONE");
   if (!iocType) {
+    console.log("[IOCParser] parseIOCNode - No IOC type detected, returning null");
     return null;
   }
+  console.log("[IOCParser] parseIOCNode - Extracting fields for type:", iocType);
+  console.log("[IOCParser] parseIOCNode - ===== VALUE EXTRACTION START =====");
   const value = extractValue(text);
+  console.log("[IOCParser] parseIOCNode - ===== VALUE EXTRACTION END =====");
+  console.log("[IOCParser] parseIOCNode - EXTRACTED VALUE:", value || "(empty/null)", "(length:", value ? value.length : 0, ")");
   const time = extractTime(text);
   const splunkQuery = extractSplunkQuery(text);
   const tactic = extractTactic(text);
   const technique = extractTechnique(text);
+  console.log("[IOCParser] parseIOCNode - All extracted fields:");
+  console.log("  - value:", value || "**EMPTY**");
+  console.log("  - time:", time || "(empty)");
+  console.log("  - splunkQuery:", splunkQuery || "(empty)");
+  console.log("  - tactic:", tactic || "(empty)");
+  console.log("  - technique:", technique || "(empty)");
   const fallbackColor = node.color || "#333";
   const { icon, color } = lookupTypeVisuals(iocType, fallbackColor);
-  return {
+  console.log("[IOCParser] parseIOCNode - Looked up visuals - color:", color, "icon length:", icon.length);
+  const result = {
     id: node.id,
     type: iocType,
     value,
@@ -368,6 +489,11 @@ function parseIOCNode(node) {
     icon,
     color
   };
+  console.log("[IOCParser] parseIOCNode - ===== FINAL RESULT =====");
+  console.log("[IOCParser] parseIOCNode - Returning node with value:", result.value || "**NO VALUE**");
+  console.log("[IOCParser] parseIOCNode - Full result:", JSON.stringify(result, null, 2));
+  console.log("[IOCParser] parseIOCNode - ===== END PARSING =====");
+  return result;
 }
 
 // src/LinkTimelineProcessing.ts
@@ -397,21 +523,25 @@ var LinkTimelineProcessor = class {
    */
   extractEnhancedLinkData() {
     var _a, _b;
-    console.log("Starting enhanced comprehensive canvas analysis...");
+    console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    console.log("[LinkProcessor] ===== STARTING LINK TIMELINE EXTRACTION =====");
     const activeLeaf = this.app.workspace.activeLeaf;
     if (!activeLeaf || !activeLeaf.view) {
-      console.log("No active workspace leaf found");
-      return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+      console.log("[LinkProcessor] \u2717 No active workspace leaf found");
+      console.log("[LinkProcessor] ===== EXTRACTION FAILED =====");
+      return { layers: [], edges: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, rootNodes: 0 };
     }
     if (activeLeaf.view.getViewType() !== "canvas") {
-      console.log("Not a canvas view");
-      return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+      console.log("[LinkProcessor] \u2717 Not a canvas view");
+      console.log("[LinkProcessor] ===== EXTRACTION FAILED =====");
+      return { layers: [], edges: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, rootNodes: 0 };
     }
     const canvasView = activeLeaf.view;
     const canvas = canvasView.canvas;
     if (!canvas) {
-      console.log("No canvas object in view");
-      return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+      console.log("[LinkProcessor] \u2717 No canvas object in view");
+      console.log("[LinkProcessor] ===== EXTRACTION FAILED =====");
+      return { layers: [], edges: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, rootNodes: 0 };
     }
     let nodes = [];
     let edges = [];
@@ -429,44 +559,65 @@ var LinkTimelineProcessor = class {
     } else if ((_b = canvas.data) == null ? void 0 : _b.edges) {
       edges = Array.isArray(canvas.data.edges) ? canvas.data.edges : [];
     }
-    console.log(`Final counts: ${nodes.length} nodes, ${edges.length} edges`);
+    console.log("[LinkProcessor] \u2713 Canvas data retrieved");
+    console.log(`[LinkProcessor] Final counts: ${nodes.length} nodes, ${edges.length} edges`);
     if (nodes.length === 0) {
-      return { rootNodes: [], isolatedNodes: [], canvasFound: true, totalNodes: 0, totalEdges: edges.length, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+      console.log("[LinkProcessor] \u2717 No nodes found in canvas");
+      console.log("[LinkProcessor] ===== EXTRACTION COMPLETE (EMPTY) =====");
+      return { layers: [], edges: [], isolatedNodes: [], canvasFound: true, totalNodes: 0, totalEdges: edges.length, iocNodes: 0, validConnections: 0, rootNodes: 0 };
     }
+    console.log("[LinkProcessor] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    console.log("[LinkProcessor] STEP 1: Parsing IOC nodes...");
     const iocNodeMap = /* @__PURE__ */ new Map();
     const incomingConnections = /* @__PURE__ */ new Map();
     const outgoingConnections = /* @__PURE__ */ new Map();
     const edgeLabels = /* @__PURE__ */ new Map();
     let iocNodeCount = 0;
+    let emptyValueCount = 0;
     if (nodes.length !== 0) {
-      nodes.forEach((node) => {
+      nodes.forEach((node, index) => {
         if (node.text) {
+          console.log(`[LinkProcessor]   Node ${index + 1}/${nodes.length}: ${node.id}`);
           const nodeData = parseIOCNode(node);
           if (nodeData) {
             iocNodeMap.set(node.id, nodeData);
             outgoingConnections.set(node.id, []);
             incomingConnections.set(node.id, []);
             iocNodeCount++;
-            console.log(`IOC node identified: ${node.id} - ${nodeData.type}`);
+            console.log(`[LinkProcessor]   \u2713 IOC detected: ${nodeData.type}`);
+            console.log(`[LinkProcessor]     Value: ${nodeData.value ? `"${nodeData.value}"` : "(EMPTY)"}`);
+            if (!nodeData.value || !nodeData.value.trim()) {
+              emptyValueCount++;
+              console.log("[LinkProcessor]     \u26A0\uFE0F  WARNING: This IOC has an EMPTY value!");
+            }
+          } else {
+            console.log(`[LinkProcessor]   \u2717 Not an IOC node`);
           }
         }
       });
     }
-    console.log(`IOC nodes identified: ${iocNodeCount}`);
+    console.log("[LinkProcessor] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    console.log(`[LinkProcessor] STEP 1 COMPLETE: ${iocNodeCount} IOC nodes identified`);
+    console.log(`[LinkProcessor]   IOCs with values: ${iocNodeCount - emptyValueCount}`);
+    console.log(`[LinkProcessor]   IOCs with EMPTY values: ${emptyValueCount}`);
     if (iocNodeCount === 0) {
+      console.log("[LinkProcessor] \u2717 No IOC nodes found in canvas");
+      console.log("[LinkProcessor] ===== EXTRACTION COMPLETE (NO IOCs) =====");
       return {
-        rootNodes: [],
+        layers: [],
+        edges: [],
         isolatedNodes: [],
         canvasFound: true,
         totalNodes: nodes.length,
         totalEdges: edges.length,
         iocNodes: 0,
         validConnections: 0,
-        sourceNodes: 0
+        rootNodes: 0
       };
     }
+    console.log("[LinkProcessor] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    console.log("[LinkProcessor] STEP 2: Processing edges...");
     let validConnectionCount = 0;
-    console.log(`Starting edge processing... Found ${edges.length} edges`);
     if (nodes.length !== 0) {
       edges.forEach((edge, edgeIndex) => {
         var _a2, _b2, _c, _d, _e, _f;
@@ -510,7 +661,10 @@ var LinkTimelineProcessor = class {
         } else if (edge.text) {
           edgeLabel = edge.text;
         }
-        console.log(`Edge ${edgeIndex}: ${fromId} -> ${toId}, Label: "${edgeLabel}"`);
+        console.log(`[LinkProcessor]   Edge ${edgeIndex + 1}/${edges.length}: ${fromId} -> ${toId}`);
+        if (edgeLabel) {
+          console.log(`[LinkProcessor]     Label: "${edgeLabel}"`);
+        }
         if (iocNodeMap.has(fromId) && iocNodeMap.has(toId)) {
           const fromConnections = outgoingConnections.get(fromId);
           const toConnections = incomingConnections.get(toId);
@@ -520,23 +674,28 @@ var LinkTimelineProcessor = class {
             const edgeKey = `${fromId}->${toId}`;
             edgeLabels.set(edgeKey, edgeLabel);
             validConnectionCount++;
-            console.log(`Valid IOC connection added: ${fromId} -> ${toId} (Label: "${edgeLabel}")`);
+            console.log(`[LinkProcessor]     \u2713 Valid IOC connection`);
           }
+        } else {
+          console.log(`[LinkProcessor]     \u2717 Not an IOC-to-IOC edge (skipped)`);
         }
       });
     }
-    console.log(`Valid connections processed: ${validConnectionCount}`);
+    console.log("[LinkProcessor] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    console.log(`[LinkProcessor] STEP 2 COMPLETE: ${validConnectionCount} valid connections`);
+    console.log("[LinkProcessor] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    console.log("[LinkProcessor] STEP 3: Building layered DAG structure...");
     const nodeDepths = /* @__PURE__ */ new Map();
     const rootNodeIds = [];
-    iocNodeMap.forEach((_, nodeId) => {
+    iocNodeMap.forEach((nodeData, nodeId) => {
       const incoming = incomingConnections.get(nodeId) || [];
       if (incoming.length === 0) {
         rootNodeIds.push(nodeId);
         nodeDepths.set(nodeId, 0);
-        console.log(`Root node identified: ${nodeId}`);
+        console.log(`[LinkProcessor]   \u2713 Root node: ${nodeId} (${nodeData.type})`);
       }
     });
-    console.log(`Root nodes found: ${rootNodeIds.length}`);
+    console.log(`[LinkProcessor] Found ${rootNodeIds.length} root nodes`);
     const queue = rootNodeIds.map((id) => ({ nodeId: id, depth: 0 }));
     const visited = /* @__PURE__ */ new Set();
     while (queue.length > 0) {
@@ -667,8 +826,23 @@ var LinkTimelineProcessor = class {
       validConnections: validConnectionCount,
       rootNodes: rootNodeIds.length
     };
-    console.log("Final layered DAG structure result:", result);
-    console.log(`Layers: ${layers.length}, Total nodes in layers: ${layers.reduce((sum, layer) => sum + layer.length, 0)}, Isolated nodes: ${isolatedNodes.length}`);
+    console.log("[LinkProcessor] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    console.log("[LinkProcessor] ===== EXTRACTION COMPLETE =====");
+    console.log("[LinkProcessor] Result summary:");
+    console.log(`[LinkProcessor]   Layers: ${layers.length}`);
+    console.log(`[LinkProcessor]   Nodes in layers: ${layers.reduce((sum, layer) => sum + layer.length, 0)}`);
+    console.log(`[LinkProcessor]   Edges: ${graphEdges.length}`);
+    console.log(`[LinkProcessor]   Isolated nodes: ${isolatedNodes.length}`);
+    console.log(`[LinkProcessor]   Root nodes: ${rootNodeIds.length}`);
+    layers.forEach((layer, index) => {
+      if (layer.length > 0) {
+        console.log(`[LinkProcessor]   Layer ${index}: ${layer.length} nodes`);
+        layer.forEach((node) => {
+          console.log(`[LinkProcessor]     - ${node.data.type}: ${node.data.value || "(empty)"}`);
+        });
+      }
+    });
+    console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
     return result;
   }
 };
@@ -689,27 +863,64 @@ var TimeTimelineProcessor = class {
    *
    * The caller (RenderTimelinesModal) sorts the result by time for display.
    *
+   * DEBUG: Console logs show processing steps for troubleshooting.
+   *
    * @returns Array of parsed IOC node data objects, unsorted
    */
   extractFixedIOCData() {
+    console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    console.log("[TimeProcessor] ===== STARTING TIME TIMELINE EXTRACTION =====");
     const activeLeaf = this.app.workspace.activeLeaf;
     if (!activeLeaf || !activeLeaf.view || activeLeaf.view.getViewType() !== "canvas") {
+      console.log("[TimeProcessor] \u2717 No active canvas view found");
+      console.log("[TimeProcessor] ===== EXTRACTION FAILED =====");
       return [];
     }
     const canvasView = activeLeaf.view;
     const canvas = canvasView.canvas;
     if (!canvas || !canvas.nodes) {
+      console.log("[TimeProcessor] \u2717 No canvas or canvas.nodes found");
+      console.log("[TimeProcessor] ===== EXTRACTION FAILED =====");
       return [];
     }
+    const totalNodes = canvas.nodes.size || canvas.nodes.length || 0;
+    console.log("[TimeProcessor] \u2713 Canvas found with", totalNodes, "total nodes");
+    console.log("[TimeProcessor] Processing nodes...");
     const iocData = [];
+    let processedCount = 0;
+    let iocCount = 0;
+    let emptyValueCount = 0;
     canvas.nodes.forEach((node) => {
+      processedCount++;
       if (node.text) {
+        console.log(`[TimeProcessor] \u2500\u2500\u2500\u2500\u2500 Node ${processedCount}/${totalNodes} \u2500\u2500\u2500\u2500\u2500`);
+        console.log("[TimeProcessor] Node ID:", node.id);
+        console.log("[TimeProcessor] Parsing node...");
         const parsedData = parseIOCNode(node);
         if (parsedData) {
+          iocCount++;
+          console.log("[TimeProcessor] \u2713 IOC detected:", parsedData.type);
+          console.log("[TimeProcessor]   Value:", parsedData.value ? `"${parsedData.value}"` : "(EMPTY)");
+          console.log("[TimeProcessor]   Time:", parsedData.time || "(no time)");
+          if (!parsedData.value || !parsedData.value.trim()) {
+            emptyValueCount++;
+            console.log("[TimeProcessor]   \u26A0\uFE0F  WARNING: This IOC has an EMPTY value!");
+          }
           iocData.push(parsedData);
+        } else {
+          console.log("[TimeProcessor] \u2717 Not an IOC node (no match)");
         }
       }
     });
+    console.log("[TimeProcessor] \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    console.log("[TimeProcessor] ===== EXTRACTION SUMMARY =====");
+    console.log("[TimeProcessor] Total nodes processed:", processedCount);
+    console.log("[TimeProcessor] IOC cards found:", iocCount);
+    console.log("[TimeProcessor] IOCs with values:", iocCount - emptyValueCount);
+    console.log("[TimeProcessor] IOCs with EMPTY values:", emptyValueCount);
+    console.log("[TimeProcessor] Returning", iocData.length, "IOC data objects");
+    console.log("[TimeProcessor] ===== EXTRACTION COMPLETE =====");
+    console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
     return iocData;
   }
 };
@@ -775,10 +986,16 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
    * Renders the chronological Time Timeline. Extracts IOC data from canvas
    * nodes via the time processor, sorts by event timestamp, and renders each
    * IOC as a colored card with a gradient connector to the next card.
+   *
+   * DEBUG: Console logs show timeline data for troubleshooting.
    */
   renderEnhancedTimeTimeline(container) {
+    console.log("[TimeTimeline] renderEnhancedTimeTimeline - Starting render");
     const iocData = this.timeProcessor.extractFixedIOCData();
+    console.log("[TimeTimeline] Extracted IOC data - count:", iocData.length);
+    console.log("[TimeTimeline] IOC data sample:", iocData.slice(0, 3));
     if (iocData.length === 0) {
+      console.log("[TimeTimeline] No IOC cards found, showing empty message");
       container.createEl("p", {
         text: "No IOC cards found in the current canvas. Create some IOC cards first to see the timeline.",
         cls: "timeline-empty-message"
@@ -786,6 +1003,7 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
       return;
     }
     iocData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+    console.log("[TimeTimeline] Sorted IOC data by time");
     const timelineContainer = container.createDiv("timeline-container");
     iocData.forEach((ioc, index) => {
       const timelineItem = timelineContainer.createDiv("timeline-item");
@@ -805,15 +1023,24 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
       const detailsContainer = timelineItem.createDiv("timeline-details");
       const titleEl = detailsContainer.createEl("h3", { text: ioc.type });
       titleEl.style.textShadow = `0 1px 3px ${ioc.color}40`;
-      if (ioc.value) {
-        const valueContainer = detailsContainer.createDiv("timeline-value-container");
-        const valueLabel = valueContainer.createDiv("timeline-value-label");
-        valueLabel.textContent = "Value";
-        const valueEl = valueContainer.createDiv("timeline-value-text");
-        valueEl.textContent = ioc.value;
-      }
+      console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+      console.log("[TimeTimeline] ===== RENDERING IOC CARD =====");
+      console.log("[TimeTimeline] IOC Type:", ioc.type);
+      console.log("[TimeTimeline] IOC Value:", JSON.stringify(ioc.value));
+      console.log("[TimeTimeline] Value is truthy?", !!ioc.value);
+      console.log("[TimeTimeline] Value after trim:", ioc.value ? JSON.stringify(ioc.value.trim()) : "N/A");
+      console.log("[TimeTimeline] Will display value?", !!(ioc.value && ioc.value.trim()));
+      console.log("[TimeTimeline] IOC Time:", ioc.time);
       const timeEl = detailsContainer.createDiv("timeline-time");
-      timeEl.innerHTML = `\u{1F550} Time: ${ioc.time}`;
+      if (ioc.value && ioc.value.trim()) {
+        timeEl.innerHTML = `\u{1F550} Time: ${ioc.time} - Value: ${ioc.value}`;
+        console.log("[TimeTimeline] \u2713 DISPLAYING combined time+value:", timeEl.innerHTML);
+      } else {
+        timeEl.innerHTML = `\u{1F550} Time: ${ioc.time}`;
+        console.log("[TimeTimeline] \u2717 NO VALUE - showing time only");
+        console.log("[TimeTimeline] Reason: value is", ioc.value === void 0 ? "undefined" : ioc.value === null ? "null" : ioc.value === "" ? "empty string" : "falsy after trim");
+      }
+      console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
       if (ioc.splunkQuery && ioc.splunkQuery.trim()) {
         const splunkEl = detailsContainer.createDiv("timeline-splunk");
         splunkEl.innerHTML = `\u{1F50D} Splunk Query: ${ioc.splunkQuery}`;
@@ -838,11 +1065,19 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
    * Renders the Link Timeline as a layered DAG with horizontal layout.
    * Each node appears exactly once at its maximum depth, nodes at the same
    * depth are displayed side-by-side, and SVG arrows show all connections.
+   *
+   * DEBUG: Console logs show link timeline data and rendering steps.
    */
   renderEnhancedLayeredTimeline(container) {
-    console.log("Starting layered DAG link timeline rendering...");
+    console.log("[LinkTimeline] renderEnhancedLayeredTimeline - Starting render");
     const linkData = this.linkProcessor.extractEnhancedLinkData();
+    console.log("[LinkTimeline] Extracted link data:");
+    console.log("  - Layers:", linkData.layers.length);
+    console.log("  - Total nodes in layers:", linkData.layers.reduce((sum, layer) => sum + layer.length, 0));
+    console.log("  - Edges:", linkData.edges.length);
+    console.log("  - Isolated nodes:", linkData.isolatedNodes.length);
     if (linkData.layers.length === 0 && linkData.isolatedNodes.length === 0) {
+      console.log("[LinkTimeline] No link data found, showing empty message");
       const emptyMessage = container.createEl("div", { cls: "timeline-empty-message" });
       emptyMessage.innerHTML = `
                 <h3>Link Timeline Analysis</h3>
@@ -850,6 +1085,7 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
             `;
       return;
     }
+    console.log("[LinkTimeline] Proceeding with DAG rendering");
     const dagContainer = container.createDiv("dag-timeline-container");
     const svgNS = "http://www.w3.org/2000/svg";
     const svgContainer = document.createElementNS(svgNS, "svg");
@@ -914,7 +1150,7 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
     });
   }
   /**
-   * Draw SVG arrows between connected nodes
+   * Draw SVG arrows between connected nodes with improved routing to prevent overlap
    */
   drawArrows(svgContainer, edges, positions) {
     const svgNS = "http://www.w3.org/2000/svg";
@@ -933,30 +1169,164 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
     marker.appendChild(polygon);
     defs.appendChild(marker);
     svgContainer.appendChild(defs);
+    const edgesBySource = /* @__PURE__ */ new Map();
     edges.forEach((edge) => {
-      const fromPos = positions.get(edge.fromId);
-      const toPos = positions.get(edge.toId);
-      if (!fromPos || !toPos)
+      if (!edgesBySource.has(edge.fromId)) {
+        edgesBySource.set(edge.fromId, []);
+      }
+      edgesBySource.get(edge.fromId).push(edge);
+    });
+    edgesBySource.forEach((sourceEdges, fromId) => {
+      const fromPos = positions.get(fromId);
+      if (!fromPos)
         return;
-      const x1 = fromPos.x;
-      const y1 = fromPos.y + fromPos.height / 2;
-      const x2 = toPos.x;
-      const y2 = toPos.y - toPos.height / 2;
-      const midY = (y1 + y2) / 2;
-      const path = document.createElementNS(svgNS, "path");
-      const pathData = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
-      path.setAttribute("d", pathData);
-      path.setAttribute("stroke", "var(--text-muted)");
-      path.setAttribute("stroke-width", "2");
-      path.setAttribute("fill", "none");
-      path.setAttribute("marker-end", "url(#arrowhead)");
-      path.setAttribute("opacity", "0.6");
-      path.classList.add("dag-arrow");
-      svgContainer.appendChild(path);
+      if (sourceEdges.length === 1) {
+        const edge = sourceEdges[0];
+        const toPos = positions.get(edge.toId);
+        if (!toPos)
+          return;
+        this.drawSingleArrow(svgContainer, svgNS, fromPos, toPos, edge);
+      } else {
+        this.drawMergedArrows(svgContainer, svgNS, fromPos, sourceEdges, positions);
+      }
+    });
+  }
+  /**
+   * Draw a single arrow where the arrowhead touches the card but the line doesn't.
+   * The arrow LINE is kept clear of cards (12px minimum), and the arrowhead (~10px)
+   * extends from there to touch the card edge (effectively 0-2px from card).
+   *
+   * DEBUG: Console logs show arrow routing calculations.
+   */
+  drawSingleArrow(svgContainer, svgNS, fromPos, toPos, edge) {
+    const LINE_CLEARANCE = 12;
+    const ARROWHEAD_LENGTH = 10;
+    const HORIZONTAL_CLEARANCE = 50;
+    const x1 = fromPos.x;
+    const y1 = fromPos.y + fromPos.height / 2 + LINE_CLEARANCE;
+    const x2 = toPos.x;
+    const y2 = toPos.y - toPos.height / 2 - LINE_CLEARANCE;
+    console.log("[Arrow] drawSingleArrow - From:", edge.fromId, "To:", edge.toId);
+    console.log("[Arrow]   Source pos:", fromPos.x, fromPos.y, "size:", fromPos.width, "x", fromPos.height);
+    console.log("[Arrow]   Target pos:", toPos.x, toPos.y, "size:", toPos.width, "x", toPos.height);
+    console.log("[Arrow]   Line start:", x1, y1, "(", LINE_CLEARANCE, "px below source)");
+    console.log("[Arrow]   Line end:", x2, y2, "(", LINE_CLEARANCE, "px above target, arrowhead reaches", LINE_CLEARANCE - ARROWHEAD_LENGTH, "px)");
+    const verticalGap = y2 - y1;
+    const horizontalGap = Math.abs(x2 - x1);
+    console.log("[Arrow]   Gaps: vertical=", verticalGap, "horizontal=", horizontalGap);
+    let pathData;
+    if (verticalGap > 50) {
+      const exitLength = Math.max(30, verticalGap * 0.3);
+      const entryLength = Math.max(30, verticalGap * 0.3);
+      const midY1 = y1 + exitLength;
+      const midY2 = y2 - entryLength;
+      const midY = (midY1 + midY2) / 2;
+      const sourceBottom = fromPos.y + fromPos.height / 2;
+      const targetTop = toPos.y - toPos.height / 2;
+      const safeHorizontalY = Math.max(
+        midY,
+        sourceBottom + HORIZONTAL_CLEARANCE,
+        // Well below source card
+        Math.min(midY, targetTop - HORIZONTAL_CLEARANCE)
+        // Well above target card
+      );
+      pathData = `M ${x1} ${y1} L ${x1} ${safeHorizontalY} L ${x2} ${safeHorizontalY} L ${x2} ${y2}`;
+      console.log("[Arrow]   Using orthogonal routing at safeHorizontalY=", safeHorizontalY);
+    } else {
+      const controlOffset = Math.max(60, horizontalGap * 0.5, verticalGap * 0.8);
+      pathData = `M ${x1} ${y1} C ${x1} ${y1 + controlOffset}, ${x2} ${y2 - controlOffset}, ${x2} ${y2}`;
+      console.log("[Arrow]   Using Bezier curve with controlOffset=", controlOffset);
+    }
+    const path = document.createElementNS(svgNS, "path");
+    path.setAttribute("d", pathData);
+    path.setAttribute("stroke", "var(--text-muted)");
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("fill", "none");
+    path.setAttribute("marker-end", "url(#arrowhead)");
+    path.setAttribute("opacity", "0.6");
+    path.classList.add("dag-arrow");
+    svgContainer.appendChild(path);
+    if (edge.label && edge.label.trim()) {
+      const labelY = (y1 + y2) / 2;
+      const labelX = (x1 + x2) / 2;
+      const text = document.createElementNS(svgNS, "text");
+      text.setAttribute("x", labelX.toString());
+      text.setAttribute("y", labelY.toString());
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("fill", "var(--text-muted)");
+      text.setAttribute("font-size", "11px");
+      text.setAttribute("font-weight", "600");
+      text.textContent = edge.label;
+      svgContainer.appendChild(text);
+    }
+  }
+  /**
+   * Draw multiple arrows from same source with trunk-and-branch pattern.
+   * Trunk and branches keep lines clear of cards (12px), arrowheads touch card edges.
+   *
+   * DEBUG: Console logs show trunk and branch routing.
+   */
+  drawMergedArrows(svgContainer, svgNS, fromPos, edges, positions) {
+    const LINE_CLEARANCE = 12;
+    const HORIZONTAL_CLEARANCE = 50;
+    console.log("[Arrow] drawMergedArrows - Source:", edges[0].fromId, "- Branch count:", edges.length);
+    const trunkX = fromPos.x;
+    const trunkStartY = fromPos.y + fromPos.height / 2 + LINE_CLEARANCE;
+    const trunkLength = 50;
+    const trunkEndY = trunkStartY + trunkLength;
+    console.log("[Arrow]   Trunk: x=", trunkX, "start y=", trunkStartY, "end y=", trunkEndY, "length=", trunkLength);
+    const trunk = document.createElementNS(svgNS, "path");
+    trunk.setAttribute("d", `M ${trunkX} ${trunkStartY} L ${trunkX} ${trunkEndY}`);
+    trunk.setAttribute("stroke", "var(--text-muted)");
+    trunk.setAttribute("stroke-width", "3");
+    trunk.setAttribute("fill", "none");
+    trunk.setAttribute("opacity", "0.7");
+    trunk.classList.add("dag-arrow", "dag-arrow-trunk");
+    svgContainer.appendChild(trunk);
+    edges.forEach((edge, index) => {
+      const toPos = positions.get(edge.toId);
+      if (!toPos) {
+        console.log("[Arrow]   Branch", index, "- Target not found:", edge.toId);
+        return;
+      }
+      const targetX = toPos.x;
+      const targetY = toPos.y - toPos.height / 2 - LINE_CLEARANCE;
+      console.log("[Arrow]   Branch", index, "- Target:", edge.toId, "at", targetX, targetY);
+      const horizontalOffset = targetX - trunkX;
+      const verticalGap = targetY - trunkEndY;
+      console.log("[Arrow]     Offsets: horizontal=", horizontalOffset, "vertical=", verticalGap);
+      let branchPath;
+      if (verticalGap > 40) {
+        const sourceBottom = fromPos.y + fromPos.height / 2;
+        const targetTop = toPos.y - toPos.height / 2;
+        const baseMidY = trunkEndY + Math.max(30, verticalGap * 0.4);
+        const safeHorizontalY = Math.max(
+          baseMidY,
+          sourceBottom + HORIZONTAL_CLEARANCE
+          // Well below source card
+        );
+        branchPath = `M ${trunkX} ${trunkEndY} L ${trunkX} ${safeHorizontalY} L ${targetX} ${safeHorizontalY} L ${targetX} ${targetY}`;
+        console.log("[Arrow]     Using orthogonal branch routing at safeHorizontalY=", safeHorizontalY);
+      } else {
+        const controlOffset = Math.max(50, Math.abs(horizontalOffset) * 0.5, verticalGap * 0.7);
+        branchPath = `M ${trunkX} ${trunkEndY} C ${trunkX} ${trunkEndY + controlOffset}, ${targetX} ${targetY - controlOffset}, ${targetX} ${targetY}`;
+        console.log("[Arrow]     Using Bezier branch with controlOffset=", controlOffset);
+      }
+      const branch = document.createElementNS(svgNS, "path");
+      branch.setAttribute("d", branchPath);
+      branch.setAttribute("stroke", "var(--text-muted)");
+      branch.setAttribute("stroke-width", "2");
+      branch.setAttribute("fill", "none");
+      branch.setAttribute("marker-end", "url(#arrowhead)");
+      branch.setAttribute("opacity", "0.6");
+      branch.classList.add("dag-arrow", "dag-arrow-branch");
+      svgContainer.appendChild(branch);
       if (edge.label && edge.label.trim()) {
+        const labelX = (trunkX + targetX) / 2;
+        const labelY = (trunkEndY + targetY) / 2;
         const text = document.createElementNS(svgNS, "text");
-        text.setAttribute("x", ((x1 + x2) / 2).toString());
-        text.setAttribute("y", midY.toString());
+        text.setAttribute("x", labelX.toString());
+        text.setAttribute("y", labelY.toString());
         text.setAttribute("text-anchor", "middle");
         text.setAttribute("fill", "var(--text-muted)");
         text.setAttribute("font-size", "11px");
@@ -968,9 +1338,20 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
   }
   /**
    * Renders a single layered node card with full IOC details.
+   *
+   * DEBUG: Console logs show node rendering details.
    */
   renderLayeredNodeCard(container, node) {
     const nodeColor = node.color || "var(--background-modifier-border)";
+    console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    console.log("[LinkTimeline] ===== RENDERING NODE CARD =====");
+    console.log("[LinkTimeline] Node Type:", node.type);
+    console.log("[LinkTimeline] Node ID:", node.id);
+    console.log("[LinkTimeline] Node Value:", JSON.stringify(node.value));
+    console.log("[LinkTimeline] Value is truthy?", !!node.value);
+    console.log("[LinkTimeline] Value after trim:", node.value ? JSON.stringify(node.value.trim()) : "N/A");
+    console.log("[LinkTimeline] Will display value?", !!(node.value && node.value.trim()));
+    console.log("[LinkTimeline] Node Time:", node.time);
     const nodeContainer = container.createDiv("dag-node");
     nodeContainer.style.background = `linear-gradient(135deg, ${nodeColor}15 0%, ${nodeColor}05 100%)`;
     nodeContainer.style.boxShadow = `0 4px 12px ${nodeColor}25`;
@@ -983,12 +1364,17 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
     nodeType.textContent = node.type || "Unknown IOC";
     const nodeDetails = nodeContainer.createDiv("dag-node-details");
     if (node.value && node.value.trim()) {
+      console.log("[LinkTimeline] \u2713 DISPLAYING value:", node.value);
       const valueContainer = nodeDetails.createDiv("dag-node-value-container");
       const valueLabel = valueContainer.createDiv("dag-node-value-label");
       valueLabel.textContent = "Value";
       const valueEl = valueContainer.createDiv("dag-node-value-text");
       valueEl.textContent = node.value;
+    } else {
+      console.log("[LinkTimeline] \u2717 NO VALUE - not displaying");
+      console.log("[LinkTimeline] Reason: value is", node.value === void 0 ? "undefined" : node.value === null ? "null" : node.value === "" ? "empty string" : "falsy after trim");
     }
+    console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
     if (node.time && node.time.trim()) {
       const timeEl = nodeDetails.createDiv("dag-node-time");
       timeEl.innerHTML = `\u{1F550} Time: ${node.time}`;
@@ -1121,6 +1507,8 @@ var RenderIOCCards = class {
 `;
     iocType.fields.forEach((field) => {
       content += `${field}: 
+
+
 
 `;
     });

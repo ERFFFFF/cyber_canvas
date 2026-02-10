@@ -58,25 +58,29 @@ export class LinkTimelineProcessor {
      * @returns Object with layers (array of LayeredNode arrays), edges, isolatedNodes, and diagnostic counters
      */
     extractEnhancedLinkData(): any {
-        console.log('Starting enhanced comprehensive canvas analysis...');
+        console.log('═══════════════════════════════════════════════════════════════');
+        console.log('[LinkProcessor] ===== STARTING LINK TIMELINE EXTRACTION =====');
         const activeLeaf = this.app.workspace.activeLeaf;
 
         if (!activeLeaf || !activeLeaf.view) {
-            console.log('No active workspace leaf found');
-            return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+            console.log('[LinkProcessor] ✗ No active workspace leaf found');
+            console.log('[LinkProcessor] ===== EXTRACTION FAILED =====');
+            return { layers: [], edges: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, rootNodes: 0 };
         }
 
         if (activeLeaf.view.getViewType() !== 'canvas') {
-            console.log('Not a canvas view');
-            return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+            console.log('[LinkProcessor] ✗ Not a canvas view');
+            console.log('[LinkProcessor] ===== EXTRACTION FAILED =====');
+            return { layers: [], edges: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, rootNodes: 0 };
         }
 
         const canvasView = activeLeaf.view as any;
         const canvas = canvasView.canvas;
 
         if (!canvas) {
-            console.log('No canvas object in view');
-            return { rootNodes: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+            console.log('[LinkProcessor] ✗ No canvas object in view');
+            console.log('[LinkProcessor] ===== EXTRACTION FAILED =====');
+            return { layers: [], edges: [], isolatedNodes: [], canvasFound: false, totalNodes: 0, totalEdges: 0, iocNodes: 0, validConnections: 0, rootNodes: 0 };
         }
 
         // Retrieve nodes and edges from the canvas.
@@ -102,55 +106,78 @@ export class LinkTimelineProcessor {
             edges = Array.isArray(canvas.data.edges) ? canvas.data.edges : [];
         }
 
-        console.log(`Final counts: ${nodes.length} nodes, ${edges.length} edges`);
+        console.log('[LinkProcessor] ✓ Canvas data retrieved');
+        console.log(`[LinkProcessor] Final counts: ${nodes.length} nodes, ${edges.length} edges`);
 
         if (nodes.length === 0) {
-            return { rootNodes: [], isolatedNodes: [], canvasFound: true, totalNodes: 0, totalEdges: edges.length, iocNodes: 0, validConnections: 0, sourceNodes: 0 };
+            console.log('[LinkProcessor] ✗ No nodes found in canvas');
+            console.log('[LinkProcessor] ===== EXTRACTION COMPLETE (EMPTY) =====');
+            return { layers: [], edges: [], isolatedNodes: [], canvasFound: true, totalNodes: 0, totalEdges: edges.length, iocNodes: 0, validConnections: 0, rootNodes: 0 };
         }
 
         // --- Step 1: Parse all canvas nodes and build the IOC node map ---
+        console.log('[LinkProcessor] ───────────────────────────────────────────────');
+        console.log('[LinkProcessor] STEP 1: Parsing IOC nodes...');
+
         const iocNodeMap = new Map<string, IOCNodeData>();
         const incomingConnections = new Map<string, string[]>();
         const outgoingConnections = new Map<string, string[]>();
         const edgeLabels = new Map<string, string>(); // key: "fromId->toId"
         let iocNodeCount = 0;
+        let emptyValueCount = 0;
 
         if (nodes.length !== 0) {
-            nodes.forEach((node: any) => {
+            nodes.forEach((node: any, index: number) => {
                 if (node.text) {
+                    console.log(`[LinkProcessor]   Node ${index + 1}/${nodes.length}: ${node.id}`);
                     const nodeData = parseIOCNode(node);
                     if (nodeData) {
                         iocNodeMap.set(node.id, nodeData);
                         outgoingConnections.set(node.id, []);
                         incomingConnections.set(node.id, []);
                         iocNodeCount++;
-                        console.log(`IOC node identified: ${node.id} - ${nodeData.type}`);
+
+                        console.log(`[LinkProcessor]   ✓ IOC detected: ${nodeData.type}`);
+                        console.log(`[LinkProcessor]     Value: ${nodeData.value ? `"${nodeData.value}"` : '(EMPTY)'}`);
+
+                        if (!nodeData.value || !nodeData.value.trim()) {
+                            emptyValueCount++;
+                            console.log('[LinkProcessor]     ⚠️  WARNING: This IOC has an EMPTY value!');
+                        }
+                    } else {
+                        console.log(`[LinkProcessor]   ✗ Not an IOC node`);
                     }
                 }
             });
         }
 
-        console.log(`IOC nodes identified: ${iocNodeCount}`);
+        console.log('[LinkProcessor] ───────────────────────────────────────────────');
+        console.log(`[LinkProcessor] STEP 1 COMPLETE: ${iocNodeCount} IOC nodes identified`);
+        console.log(`[LinkProcessor]   IOCs with values: ${iocNodeCount - emptyValueCount}`);
+        console.log(`[LinkProcessor]   IOCs with EMPTY values: ${emptyValueCount}`);
 
         if (iocNodeCount === 0) {
+            console.log('[LinkProcessor] ✗ No IOC nodes found in canvas');
+            console.log('[LinkProcessor] ===== EXTRACTION COMPLETE (NO IOCs) =====');
             return {
-                rootNodes: [],
+                layers: [],
+                edges: [],
                 isolatedNodes: [],
                 canvasFound: true,
                 totalNodes: nodes.length,
                 totalEdges: edges.length,
                 iocNodes: 0,
                 validConnections: 0,
-                sourceNodes: 0
+                rootNodes: 0
             };
         }
 
         // --- Step 2: Process edges to build adjacency lists ---
+        console.log('[LinkProcessor] ───────────────────────────────────────────────');
+        console.log('[LinkProcessor] STEP 2: Processing edges...');
         // Canvas edges may use different property names depending on the
         // Obsidian version, so we check multiple possibilities.
         let validConnectionCount = 0;
-
-        console.log(`Starting edge processing... Found ${edges.length} edges`);
         if (nodes.length !== 0) {
             edges.forEach((edge: any, edgeIndex: number) => {
                 let fromId: string | null = null;
@@ -201,7 +228,10 @@ export class LinkTimelineProcessor {
                     edgeLabel = edge.text;
                 }
 
-                console.log(`Edge ${edgeIndex}: ${fromId} -> ${toId}, Label: "${edgeLabel}"`);
+                console.log(`[LinkProcessor]   Edge ${edgeIndex + 1}/${edges.length}: ${fromId} -> ${toId}`);
+                if (edgeLabel) {
+                    console.log(`[LinkProcessor]     Label: "${edgeLabel}"`);
+                }
 
                 // Only record edges between two IOC nodes
                 if (iocNodeMap.has(fromId) && iocNodeMap.has(toId)) {
@@ -217,30 +247,36 @@ export class LinkTimelineProcessor {
                         edgeLabels.set(edgeKey, edgeLabel);
 
                         validConnectionCount++;
-                        console.log(`Valid IOC connection added: ${fromId} -> ${toId} (Label: "${edgeLabel}")`);
+                        console.log(`[LinkProcessor]     ✓ Valid IOC connection`);
                     }
+                } else {
+                    console.log(`[LinkProcessor]     ✗ Not an IOC-to-IOC edge (skipped)`);
                 }
             });
         }
 
-        console.log(`Valid connections processed: ${validConnectionCount}`);
+        console.log('[LinkProcessor] ───────────────────────────────────────────────');
+        console.log(`[LinkProcessor] STEP 2 COMPLETE: ${validConnectionCount} valid connections`);
 
         // --- Step 3: Build layered DAG structure using BFS ---
+        console.log('[LinkProcessor] ───────────────────────────────────────────────');
+        console.log('[LinkProcessor] STEP 3: Building layered DAG structure...');
+
         // Each node appears exactly ONCE at its maximum depth from any root
         const nodeDepths = new Map<string, number>();
 
         // Find root nodes (no incoming edges)
         const rootNodeIds: string[] = [];
-        iocNodeMap.forEach((_, nodeId) => {
+        iocNodeMap.forEach((nodeData, nodeId) => {
             const incoming = incomingConnections.get(nodeId) || [];
             if (incoming.length === 0) {
                 rootNodeIds.push(nodeId);
                 nodeDepths.set(nodeId, 0);
-                console.log(`Root node identified: ${nodeId}`);
+                console.log(`[LinkProcessor]   ✓ Root node: ${nodeId} (${nodeData.type})`);
             }
         });
 
-        console.log(`Root nodes found: ${rootNodeIds.length}`);
+        console.log(`[LinkProcessor] Found ${rootNodeIds.length} root nodes`);
 
         // BFS to calculate maximum depth for each node
         const queue: Array<{ nodeId: string; depth: number }> = rootNodeIds.map(id => ({ nodeId: id, depth: 0 }));
@@ -400,8 +436,26 @@ export class LinkTimelineProcessor {
             rootNodes: rootNodeIds.length
         };
 
-        console.log('Final layered DAG structure result:', result);
-        console.log(`Layers: ${layers.length}, Total nodes in layers: ${layers.reduce((sum, layer) => sum + layer.length, 0)}, Isolated nodes: ${isolatedNodes.length}`);
+        console.log('[LinkProcessor] ───────────────────────────────────────────────');
+        console.log('[LinkProcessor] ===== EXTRACTION COMPLETE =====');
+        console.log('[LinkProcessor] Result summary:');
+        console.log(`[LinkProcessor]   Layers: ${layers.length}`);
+        console.log(`[LinkProcessor]   Nodes in layers: ${layers.reduce((sum: number, layer: LayeredNode[]) => sum + layer.length, 0)}`);
+        console.log(`[LinkProcessor]   Edges: ${graphEdges.length}`);
+        console.log(`[LinkProcessor]   Isolated nodes: ${isolatedNodes.length}`);
+        console.log(`[LinkProcessor]   Root nodes: ${rootNodeIds.length}`);
+
+        // Log layer-by-layer breakdown
+        layers.forEach((layer: LayeredNode[], index: number) => {
+            if (layer.length > 0) {
+                console.log(`[LinkProcessor]   Layer ${index}: ${layer.length} nodes`);
+                layer.forEach((node: LayeredNode) => {
+                    console.log(`[LinkProcessor]     - ${node.data.type}: ${node.data.value || '(empty)'}`);
+                });
+            }
+        });
+
+        console.log('═══════════════════════════════════════════════════════════════');
         return result;
     }
 }

@@ -47,10 +47,11 @@ export class RenderIOCCards {
         color: ${iocType.color}; font-size: 24px; font-weight: 700;">${iocType.name}</h2></div>
         <div class="ioc-card-content" style="padding: 0 20px;"></div></div>\n`;
 
-        // Type-specific fields: each gets a label followed by plain text
-        // where the analyst can type the value directly. No code blocks needed.
+        // Type-specific fields: field label with space for user to fill in values
+        // No separators in template - users can type values directly after the label
+        // Parser will extract content between field label and next field or metadata section
         iocType.fields.forEach((field: string) => {
-            content += `${field}: \n\n`;
+            content += `${field}: \n\n\n\n`;
         });
 
         // Fixed forensic metadata fields appended to every card type.

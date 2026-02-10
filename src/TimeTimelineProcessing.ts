@@ -33,30 +33,74 @@ export class TimeTimelineProcessor {
      *
      * The caller (RenderTimelinesModal) sorts the result by time for display.
      *
+     * DEBUG: Console logs show processing steps for troubleshooting.
+     *
      * @returns Array of parsed IOC node data objects, unsorted
      */
     extractFixedIOCData(): IOCNodeData[] {
+        console.log('═══════════════════════════════════════════════════════════════');
+        console.log('[TimeProcessor] ===== STARTING TIME TIMELINE EXTRACTION =====');
+
         const activeLeaf = this.app.workspace.activeLeaf;
         if (!activeLeaf || !activeLeaf.view || activeLeaf.view.getViewType() !== 'canvas') {
+            console.log('[TimeProcessor] ✗ No active canvas view found');
+            console.log('[TimeProcessor] ===== EXTRACTION FAILED =====');
             return [];
         }
 
         const canvasView = activeLeaf.view as any;
         const canvas = canvasView.canvas;
         if (!canvas || !canvas.nodes) {
+            console.log('[TimeProcessor] ✗ No canvas or canvas.nodes found');
+            console.log('[TimeProcessor] ===== EXTRACTION FAILED =====');
             return [];
         }
 
+        const totalNodes = canvas.nodes.size || canvas.nodes.length || 0;
+        console.log('[TimeProcessor] ✓ Canvas found with', totalNodes, 'total nodes');
+        console.log('[TimeProcessor] Processing nodes...');
+
         // Parse each canvas text node and collect those with valid IOC types
         const iocData: IOCNodeData[] = [];
+        let processedCount = 0;
+        let iocCount = 0;
+        let emptyValueCount = 0;
+
         canvas.nodes.forEach((node: any) => {
+            processedCount++;
             if (node.text) {
+                console.log(`[TimeProcessor] ───── Node ${processedCount}/${totalNodes} ─────`);
+                console.log('[TimeProcessor] Node ID:', node.id);
+                console.log('[TimeProcessor] Parsing node...');
+
                 const parsedData = parseIOCNode(node);
                 if (parsedData) {
+                    iocCount++;
+                    console.log('[TimeProcessor] ✓ IOC detected:', parsedData.type);
+                    console.log('[TimeProcessor]   Value:', parsedData.value ? `"${parsedData.value}"` : '(EMPTY)');
+                    console.log('[TimeProcessor]   Time:', parsedData.time || '(no time)');
+
+                    if (!parsedData.value || !parsedData.value.trim()) {
+                        emptyValueCount++;
+                        console.log('[TimeProcessor]   ⚠️  WARNING: This IOC has an EMPTY value!');
+                    }
+
                     iocData.push(parsedData);
+                } else {
+                    console.log('[TimeProcessor] ✗ Not an IOC node (no match)');
                 }
             }
         });
+
+        console.log('[TimeProcessor] ───────────────────────────────────────────────');
+        console.log('[TimeProcessor] ===== EXTRACTION SUMMARY =====');
+        console.log('[TimeProcessor] Total nodes processed:', processedCount);
+        console.log('[TimeProcessor] IOC cards found:', iocCount);
+        console.log('[TimeProcessor] IOCs with values:', iocCount - emptyValueCount);
+        console.log('[TimeProcessor] IOCs with EMPTY values:', emptyValueCount);
+        console.log('[TimeProcessor] Returning', iocData.length, 'IOC data objects');
+        console.log('[TimeProcessor] ===== EXTRACTION COMPLETE =====');
+        console.log('═══════════════════════════════════════════════════════════════');
 
         return iocData;
     }
