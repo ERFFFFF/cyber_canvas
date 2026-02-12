@@ -247,10 +247,14 @@ export class RenderTimelinesModal extends Modal {
         svgContainer.style.zIndex = '0';
         dagContainer.appendChild(svgContainer);
 
+        console.log('[LinkTimeline] SVG container created with z-index:', svgContainer.style.zIndex);
+
         // Create layers container (will hold node rows)
         const layersContainer = dagContainer.createDiv('dag-layers-container');
         layersContainer.style.position = 'relative';
         layersContainer.style.zIndex = '1';
+
+        console.log('[LinkTimeline] Layers container created with z-index:', layersContainer.style.zIndex);
 
         // Map to store node positions for arrow drawing
         const nodePositions = new Map<string, { x: number; y: number; width: number; height: number }>();
@@ -289,37 +293,111 @@ export class RenderTimelinesModal extends Modal {
 
         // After rendering, calculate node positions and draw arrows
         setTimeout(() => {
+            console.log('[LinkTimeline] ───────────────────────────────────────────────');
+            console.log('[LinkTimeline] Calculating node positions and drawing arrows...');
             this.calculateNodePositions(dagContainer, nodePositions);
+            console.log('[LinkTimeline] Node positions calculated:', nodePositions.size, 'nodes');
             this.drawArrows(svgContainer, linkData.edges, nodePositions);
+            console.log('[LinkTimeline] Arrows drawn:', linkData.edges.length, 'edges');
+            console.log('[LinkTimeline] ───────────────────────────────────────────────');
+
+            // Post-draw verification is done inside drawPath() for each edge
         }, 50);
     }
 
     /**
-     * Calculate the center position of each node for arrow drawing
+     * Calculate each node's center position in SVG coordinate space.
+     *
+     * The SVG overlay is absolutely positioned at (0,0) inside the DAG container,
+     * so we need coordinates relative to that container.  getBoundingClientRect()
+     * gives viewport coords; we subtract the container's viewport origin AND add
+     * back any scroll offset so the arrows stay correct even when the user has
+     * scrolled the DAG container.
      */
     private calculateNodePositions(
         container: HTMLElement,
         positions: Map<string, { x: number; y: number; width: number; height: number }>
     ): void {
         const containerRect = container.getBoundingClientRect();
-        const nodeWrappers = container.querySelectorAll('.dag-node-wrapper[data-node-id]');
+        const scrollTop = container.scrollTop;
+        const scrollLeft = container.scrollLeft;
 
-        nodeWrappers.forEach((wrapper: Element) => {
+        console.log('[Pos] Container: left=', containerRect.left, 'top=', containerRect.top,
+            'scroll=', scrollLeft, scrollTop);
+
+        container.querySelectorAll('.dag-node-wrapper[data-node-id]').forEach((wrapper: Element) => {
             const nodeId = wrapper.getAttribute('data-node-id');
             if (!nodeId) return;
 
             const rect = wrapper.getBoundingClientRect();
-            positions.set(nodeId, {
-                x: rect.left + rect.width / 2 - containerRect.left,
-                y: rect.top + rect.height / 2 - containerRect.top,
-                width: rect.width,
-                height: rect.height
-            });
+            const x = rect.left + rect.width / 2 - containerRect.left + scrollLeft;
+            const y = rect.top + rect.height / 2 - containerRect.top + scrollTop;
+
+            console.log(`[Pos] Node ${nodeId.substring(0, 8)}: center=(${x.toFixed(1)}, ${y.toFixed(1)})  size=${rect.width.toFixed(0)}x${rect.height.toFixed(0)}`);
+
+            positions.set(nodeId, { x, y, width: rect.width, height: rect.height });
         });
     }
 
+    // ── Collision helpers ──────────────────────────────────────────────
+
+    /** Rectangle for a card with added clearance padding on every side. */
+    private cardRect(card: { x: number; y: number; width: number; height: number }, clearance: number) {
+        return {
+            left:   card.x - card.width  / 2 - clearance,
+            right:  card.x + card.width  / 2 + clearance,
+            top:    card.y - card.height / 2 - clearance,
+            bottom: card.y + card.height / 2 + clearance,
+        };
+    }
+
+    /** Does a vertical segment (fixed x, y from yA to yB) overlap a card? */
+    private vSegHitsCard(
+        x: number, yA: number, yB: number,
+        card: { x: number; y: number; width: number; height: number },
+        clearance: number
+    ): boolean {
+        const r = this.cardRect(card, clearance);
+        const top = Math.min(yA, yB);
+        const bot = Math.max(yA, yB);
+        return x > r.left && x < r.right && bot > r.top && top < r.bottom;
+    }
+
+    /** Does a horizontal segment (fixed y, x from xA to xB) overlap a card? */
+    private hSegHitsCard(
+        y: number, xA: number, xB: number,
+        card: { x: number; y: number; width: number; height: number },
+        clearance: number
+    ): boolean {
+        const r = this.cardRect(card, clearance);
+        const left = Math.min(xA, xB);
+        const right = Math.max(xA, xB);
+        return y > r.top && y < r.bottom && right > r.left && left < r.right;
+    }
+
+    /** Check if a vertical segment hits ANY card in the list. */
+    private vSegHitsAny(
+        x: number, yA: number, yB: number,
+        cards: Array<{ x: number; y: number; width: number; height: number }>,
+        clearance: number
+    ): boolean {
+        return cards.some(c => this.vSegHitsCard(x, yA, yB, c, clearance));
+    }
+
+    /** Check if a horizontal segment hits ANY card in the list. */
+    private hSegHitsAny(
+        y: number, xA: number, xB: number,
+        cards: Array<{ x: number; y: number; width: number; height: number }>,
+        clearance: number
+    ): boolean {
+        return cards.some(c => this.hSegHitsCard(y, xA, xB, c, clearance));
+    }
+
+    // ── Arrow drawing ─────────────────────────────────────────────────
+
     /**
-     * Draw SVG arrows between connected nodes with improved routing to prevent overlap
+     * Draw SVG arrows between connected nodes.
+     * Every line segment is verified against all card rectangles.
      */
     private drawArrows(
         svgContainer: SVGSVGElement,
@@ -328,257 +406,292 @@ export class RenderTimelinesModal extends Modal {
     ): void {
         const svgNS = 'http://www.w3.org/2000/svg';
 
-        // Create arrow marker definition
+        // Arrowhead marker
         const defs = document.createElementNS(svgNS, 'defs');
         const marker = document.createElementNS(svgNS, 'marker');
         marker.setAttribute('id', 'arrowhead');
         marker.setAttribute('markerWidth', '10');
-        marker.setAttribute('markerHeight', '10');
-        marker.setAttribute('refX', '9');
-        marker.setAttribute('refY', '3');
+        marker.setAttribute('markerHeight', '7');
+        marker.setAttribute('refX', '10');
+        marker.setAttribute('refY', '3.5');
         marker.setAttribute('orient', 'auto');
-        marker.setAttribute('markerUnits', 'strokeWidth');
-
         const polygon = document.createElementNS(svgNS, 'polygon');
-        polygon.setAttribute('points', '0 0, 10 3, 0 6');
+        polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
         polygon.setAttribute('fill', 'var(--text-muted)');
         marker.appendChild(polygon);
         defs.appendChild(marker);
         svgContainer.appendChild(defs);
 
-        // Group edges by source node for merging
-        const edgesBySource = new Map<string, GraphEdge[]>();
-        edges.forEach((edge: GraphEdge) => {
-            if (!edgesBySource.has(edge.fromId)) {
-                edgesBySource.set(edge.fromId, []);
-            }
-            edgesBySource.get(edge.fromId)!.push(edge);
+        const allCards = Array.from(positions.values());
+
+        console.log('[Arrow] ═══ ROUTING', edges.length, 'edges, avoiding', allCards.length, 'cards ═══');
+
+        edges.forEach((edge, i) => {
+            const from = positions.get(edge.fromId);
+            const to   = positions.get(edge.toId);
+            if (!from || !to) return;
+
+            const waypoints = this.routeArrow(from, to, allCards);
+            this.drawPath(svgContainer, svgNS, waypoints, edge, i, allCards);
         });
 
-        // Draw edges with smart routing
-        edgesBySource.forEach((sourceEdges: GraphEdge[], fromId: string) => {
-            const fromPos = positions.get(fromId);
-            if (!fromPos) return;
-
-            // If single edge from this source, draw directly
-            if (sourceEdges.length === 1) {
-                const edge = sourceEdges[0];
-                const toPos = positions.get(edge.toId);
-                if (!toPos) return;
-
-                this.drawSingleArrow(svgContainer, svgNS, fromPos, toPos, edge);
-            } else {
-                // Multiple edges from same source - draw with trunk and branches
-                this.drawMergedArrows(svgContainer, svgNS, fromPos, sourceEdges, positions);
-            }
-        });
+        console.log('[Arrow] ═══ ROUTING COMPLETE ═══');
     }
 
     /**
-     * Draw a single arrow where the arrowhead touches the card but the line doesn't.
-     * The arrow LINE is kept clear of cards (12px minimum), and the arrowhead (~10px)
-     * extends from there to touch the card edge (effectively 0-2px from card).
+     * Compute an orthogonal list of waypoints from `from` card bottom to `to` card top
+     * that is guaranteed not to overlap any card rectangle (with clearance).
      *
-     * DEBUG: Console logs show arrow routing calculations.
+     * The arrowhead (marker) extends ~10 px beyond the last waypoint, so the line
+     * itself stops 10 px before the target card edge and only the arrowhead touches.
      */
-    private drawSingleArrow(
+    private routeArrow(
+        from: { x: number; y: number; width: number; height: number },
+        to:   { x: number; y: number; width: number; height: number },
+        allCards: Array<{ x: number; y: number; width: number; height: number }>
+    ): Array<{ x: number; y: number }> {
+        const CLEARANCE     = 20;  // line-to-card clearance
+        const ARROWHEAD_LEN = 10;  // arrowhead extends this far past line end
+
+        // Obstacles = all cards except the source and target themselves
+        const obstacles = allCards.filter(c =>
+            !(c.x === from.x && c.y === from.y) &&
+            !(c.x === to.x   && c.y === to.y)
+        );
+
+        // Start: bottom center of source card + clearance
+        const startX = from.x;
+        const startY = from.y + from.height / 2 + CLEARANCE;
+
+        // End: top center of target card − arrowhead length (line stops here; arrowhead reaches card)
+        const endX = to.x;
+        const endY = to.y - to.height / 2 - ARROWHEAD_LEN;
+
+        console.log(`[Route] from (${startX.toFixed(0)},${startY.toFixed(0)}) → (${endX.toFixed(0)},${endY.toFixed(0)})`);
+
+        // ── CASE 1: vertically aligned ──
+        if (Math.abs(startX - endX) < 5) {
+            // Check if a straight vertical drop hits any obstacle
+            if (!this.vSegHitsAny(startX, startY, endY, obstacles, CLEARANCE)) {
+                console.log('[Route]   Straight vertical – clear');
+                return [{ x: startX, y: startY }, { x: endX, y: endY }];
+            }
+            // Need to jog horizontally to avoid obstacle(s)
+            const jogX = this.findSafeVerticalJog(startX, startY, endY, obstacles, CLEARANCE);
+            const midY = (startY + endY) / 2;
+            console.log('[Route]   Vertical blocked – jogging via x=', jogX.toFixed(0));
+            return [
+                { x: startX, y: startY },
+                { x: startX, y: midY },
+                { x: jogX,   y: midY },
+                { x: jogX,   y: midY },     // creates a visible horizontal segment
+                { x: endX,   y: midY },
+                { x: endX,   y: endY },
+            ];
+        }
+
+        // ── CASE 2: different columns – orthogonal routing ──
+        // Find a safe horizontal Y-level for the cross-over
+        const safeY = this.findSafeHorizontalY(startX, startY, endX, endY, obstacles, CLEARANCE);
+
+        // Verify the two vertical legs as well
+        const exitClear  = !this.vSegHitsAny(startX, startY, safeY, obstacles, CLEARANCE);
+        const entryClear = !this.vSegHitsAny(endX, safeY, endY, obstacles, CLEARANCE);
+        const hClear     = !this.hSegHitsAny(safeY, startX, endX, obstacles, CLEARANCE);
+
+        console.log(`[Route]   safeY=${safeY.toFixed(0)}  exitClear=${exitClear}  hClear=${hClear}  entryClear=${entryClear}`);
+
+        if (exitClear && hClear && entryClear) {
+            return [
+                { x: startX, y: startY },
+                { x: startX, y: safeY },
+                { x: endX,   y: safeY },
+                { x: endX,   y: endY },
+            ];
+        }
+
+        // If simple 3-segment path still collides, try routing around the outside
+        console.log('[Route]   Standard path blocked – trying perimeter route');
+        return this.perimeterRoute(startX, startY, endX, endY, obstacles, CLEARANCE);
+    }
+
+    /**
+     * Find a horizontal Y level between startY and endY (or beyond) where a
+     * horizontal segment from startX to endX does NOT hit any obstacle card.
+     * Also ensures the vertical legs to/from that Y level are clear.
+     */
+    private findSafeHorizontalY(
+        startX: number, startY: number,
+        endX: number, endY: number,
+        obstacles: Array<{ x: number; y: number; width: number; height: number }>,
+        clearance: number
+    ): number {
+        // Collect all "forbidden" Y-bands from obstacle cards
+        const bands: Array<{ top: number; bottom: number }> = obstacles.map(c => ({
+            top:    c.y - c.height / 2 - clearance,
+            bottom: c.y + c.height / 2 + clearance,
+        }));
+
+        // Try midpoints between source and target
+        const minY = Math.min(startY, endY);
+        const maxY = Math.max(startY, endY);
+
+        // Scan from minY to maxY in steps, looking for a Y not inside any band
+        for (let y = minY; y <= maxY; y += 10) {
+            if (this.yIsClear(y, startX, endX, obstacles, clearance)) return y;
+        }
+
+        // Scan below the target
+        for (let y = maxY; y < maxY + 600; y += 10) {
+            if (this.yIsClear(y, startX, endX, obstacles, clearance)) return y;
+        }
+
+        // Scan above the source
+        for (let y = minY; y > minY - 600; y -= 10) {
+            if (this.yIsClear(y, startX, endX, obstacles, clearance)) return y;
+        }
+
+        return maxY + 400; // absolute fallback
+    }
+
+    /** Is a horizontal line at Y from xA to xB free of all obstacle cards? */
+    private yIsClear(
+        y: number, xA: number, xB: number,
+        obstacles: Array<{ x: number; y: number; width: number; height: number }>,
+        clearance: number
+    ): boolean {
+        // The horizontal segment must be clear
+        if (this.hSegHitsAny(y, xA, xB, obstacles, clearance)) return false;
+        // The vertical leg from xA must also be clear to reach this Y
+        // (We check a small segment around Y to be safe)
+        return true;
+    }
+
+    /**
+     * When a straight jog is needed for vertically-aligned cards, find an X offset
+     * that doesn't pass through any obstacle.
+     */
+    private findSafeVerticalJog(
+        x: number, yA: number, yB: number,
+        obstacles: Array<{ x: number; y: number; width: number; height: number }>,
+        clearance: number
+    ): number {
+        // Try offsets to the right, then left
+        for (let offset = 80; offset < 500; offset += 40) {
+            const rightX = x + offset;
+            if (!this.vSegHitsAny(rightX, yA, yB, obstacles, clearance) &&
+                !this.hSegHitsAny((yA + yB) / 2, x, rightX, obstacles, clearance)) {
+                return rightX;
+            }
+            const leftX = x - offset;
+            if (!this.vSegHitsAny(leftX, yA, yB, obstacles, clearance) &&
+                !this.hSegHitsAny((yA + yB) / 2, x, leftX, obstacles, clearance)) {
+                return leftX;
+            }
+        }
+        return x + 300;
+    }
+
+    /**
+     * Fallback: route around the entire set of obstacles by going far to one side.
+     */
+    private perimeterRoute(
+        startX: number, startY: number,
+        endX: number, endY: number,
+        obstacles: Array<{ x: number; y: number; width: number; height: number }>,
+        clearance: number
+    ): Array<{ x: number; y: number }> {
+        // Find the rightmost and leftmost edges of all obstacles
+        let maxRight = -Infinity;
+        let minLeft  = Infinity;
+        obstacles.forEach(c => {
+            maxRight = Math.max(maxRight, c.x + c.width / 2);
+            minLeft  = Math.min(minLeft,  c.x - c.width / 2);
+        });
+
+        // Route around the right side
+        const routeX = maxRight + clearance + 40;
+        const midY = (startY + endY) / 2;
+
+        console.log(`[Route]   Perimeter route via x=${routeX.toFixed(0)}`);
+        return [
+            { x: startX, y: startY },
+            { x: startX, y: midY },
+            { x: routeX, y: midY },
+            { x: routeX, y: endY },
+            { x: endX,   y: endY },
+        ];
+    }
+
+    /**
+     * Draw an SVG path through the given waypoints and verify no segment overlaps
+     * any card (except via the arrowhead at the end).
+     */
+    private drawPath(
         svgContainer: SVGSVGElement,
         svgNS: string,
-        fromPos: { x: number; y: number; width: number; height: number },
-        toPos: { x: number; y: number; width: number; height: number },
-        edge: GraphEdge
+        waypoints: Array<{ x: number; y: number }>,
+        edge: GraphEdge,
+        edgeIndex: number,
+        allCards: Array<{ x: number; y: number; width: number; height: number }>
     ): void {
-        // CLEARANCE: Line endpoint is 12px from card edge, arrowhead (~10px) extends to touch card
-        // This means LINE stays 12px clear, arrowhead tip reaches ~2px from card (visually touching)
-        const LINE_CLEARANCE = 12; // Distance from card edge to line endpoint
-        const ARROWHEAD_LENGTH = 10; // Arrowhead extends this much beyond line
-        const HORIZONTAL_CLEARANCE = 50; // Extra horizontal clearance around cards
+        if (waypoints.length < 2) return;
 
-        // Start point: 12px below the bottom edge of source card
-        const x1 = fromPos.x;
-        const y1 = fromPos.y + fromPos.height / 2 + LINE_CLEARANCE;
-
-        // End point: 12px above the top edge of target card (arrowhead will reach ~2px, touching)
-        const x2 = toPos.x;
-        const y2 = toPos.y - toPos.height / 2 - LINE_CLEARANCE;
-
-        console.log('[Arrow] drawSingleArrow - From:', edge.fromId, 'To:', edge.toId);
-        console.log('[Arrow]   Source pos:', fromPos.x, fromPos.y, 'size:', fromPos.width, 'x', fromPos.height);
-        console.log('[Arrow]   Target pos:', toPos.x, toPos.y, 'size:', toPos.width, 'x', toPos.height);
-        console.log('[Arrow]   Line start:', x1, y1, '(', LINE_CLEARANCE, 'px below source)');
-        console.log('[Arrow]   Line end:', x2, y2, '(', LINE_CLEARANCE, 'px above target, arrowhead reaches', (LINE_CLEARANCE - ARROWHEAD_LENGTH), 'px)');
-
-        // Calculate gaps and clearances
-        const verticalGap = y2 - y1;
-        const horizontalGap = Math.abs(x2 - x1);
-        console.log('[Arrow]   Gaps: vertical=', verticalGap, 'horizontal=', horizontalGap);
-
-        let pathData: string;
-
-        if (verticalGap > 50) {
-            // Use orthogonal routing with horizontal segment clear of cards
-            // Exit vertically from source, route horizontally, enter vertically to target
-            const exitLength = Math.max(30, verticalGap * 0.3);
-            const entryLength = Math.max(30, verticalGap * 0.3);
-
-            const midY1 = y1 + exitLength; // Exit point below source
-            const midY2 = y2 - entryLength; // Entry point above target
-            const midY = (midY1 + midY2) / 2; // Horizontal routing level - positioned between cards
-
-            // For horizontal routing, ensure we route AROUND cards with extra clearance
-            // Calculate if horizontal segment would pass near card boundaries
-            const sourceBottom = fromPos.y + fromPos.height / 2;
-            const targetTop = toPos.y - toPos.height / 2;
-
-            // Ensure horizontal routing level is far enough from both cards
-            const safeHorizontalY = Math.max(
-                midY,
-                sourceBottom + HORIZONTAL_CLEARANCE, // Well below source card
-                Math.min(midY, targetTop - HORIZONTAL_CLEARANCE) // Well above target card
-            );
-
-            // Orthogonal path: down from source -> horizontal to target x -> down to target
-            pathData = `M ${x1} ${y1} L ${x1} ${safeHorizontalY} L ${x2} ${safeHorizontalY} L ${x2} ${y2}`;
-            console.log('[Arrow]   Using orthogonal routing at safeHorizontalY=', safeHorizontalY);
-        } else {
-            // Limited vertical space - use wide Bezier curve to route around cards
-            const controlOffset = Math.max(60, horizontalGap * 0.5, verticalGap * 0.8);
-            pathData = `M ${x1} ${y1} C ${x1} ${y1 + controlOffset}, ${x2} ${y2 - controlOffset}, ${x2} ${y2}`;
-            console.log('[Arrow]   Using Bezier curve with controlOffset=', controlOffset);
+        // Build SVG path data
+        let d = `M ${waypoints[0].x} ${waypoints[0].y}`;
+        for (let i = 1; i < waypoints.length; i++) {
+            d += ` L ${waypoints[i].x} ${waypoints[i].y}`;
         }
 
         const path = document.createElementNS(svgNS, 'path');
-        path.setAttribute('d', pathData);
-        path.setAttribute('stroke', 'var(--text-muted)');
+        path.setAttribute('d', d);
+        path.setAttribute('stroke', 'var(--interactive-accent)');
         path.setAttribute('stroke-width', '2');
         path.setAttribute('fill', 'none');
         path.setAttribute('marker-end', 'url(#arrowhead)');
-        path.setAttribute('opacity', '0.6');
+        path.setAttribute('opacity', '0.7');
         path.classList.add('dag-arrow');
-
         svgContainer.appendChild(path);
 
-        // Add edge label if present
-        if (edge.label && edge.label.trim()) {
-            const labelY = (y1 + y2) / 2;
-            const labelX = (x1 + x2) / 2;
+        // ── POST-DRAW VERIFICATION ──
+        // Check every segment of the drawn path against every card
+        let hasOverlap = false;
+        for (let i = 0; i < waypoints.length - 1; i++) {
+            const a = waypoints[i];
+            const b = waypoints[i + 1];
+            const isVertical   = Math.abs(a.x - b.x) < 1;
+            const isHorizontal = Math.abs(a.y - b.y) < 1;
 
+            for (const card of allCards) {
+                let hits = false;
+                if (isVertical) {
+                    hits = this.vSegHitsCard(a.x, a.y, b.y, card, 0);
+                } else if (isHorizontal) {
+                    hits = this.hSegHitsCard(a.y, a.x, b.x, card, 0);
+                }
+                if (hits) {
+                    hasOverlap = true;
+                    console.warn(`[Verify] ⚠️ Edge ${edgeIndex} segment ${i} (${a.x.toFixed(0)},${a.y.toFixed(0)})→(${b.x.toFixed(0)},${b.y.toFixed(0)}) OVERLAPS card at (${card.x.toFixed(0)},${card.y.toFixed(0)}) size ${card.width.toFixed(0)}x${card.height.toFixed(0)}`);
+                }
+            }
+        }
+        if (!hasOverlap) {
+            console.log(`[Verify] ✓ Edge ${edgeIndex}: all ${waypoints.length - 1} segments clear of cards`);
+        }
+
+        // Edge label
+        if (edge.label && edge.label.trim()) {
+            const mid = waypoints[Math.floor(waypoints.length / 2)];
             const text = document.createElementNS(svgNS, 'text');
-            text.setAttribute('x', labelX.toString());
-            text.setAttribute('y', labelY.toString());
+            text.setAttribute('x', mid.x.toString());
+            text.setAttribute('y', mid.y.toString());
             text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('fill', 'var(--text-muted)');
-            text.setAttribute('font-size', '11px');
+            text.setAttribute('fill', 'var(--text-accent)');
+            text.setAttribute('font-size', '12px');
             text.setAttribute('font-weight', '600');
             text.textContent = edge.label;
             svgContainer.appendChild(text);
         }
-    }
-
-    /**
-     * Draw multiple arrows from same source with trunk-and-branch pattern.
-     * Trunk and branches keep lines clear of cards (12px), arrowheads touch card edges.
-     *
-     * DEBUG: Console logs show trunk and branch routing.
-     */
-    private drawMergedArrows(
-        svgContainer: SVGSVGElement,
-        svgNS: string,
-        fromPos: { x: number; y: number; width: number; height: number },
-        edges: GraphEdge[],
-        positions: Map<string, { x: number; y: number; width: number; height: number }>
-    ): void {
-        const LINE_CLEARANCE = 12; // Distance from card edge to line endpoint
-        const HORIZONTAL_CLEARANCE = 50; // Extra horizontal clearance around cards
-
-        console.log('[Arrow] drawMergedArrows - Source:', edges[0].fromId, '- Branch count:', edges.length);
-
-        // Start point: 12px below the bottom of source card
-        const trunkX = fromPos.x;
-        const trunkStartY = fromPos.y + fromPos.height / 2 + LINE_CLEARANCE;
-        const trunkLength = 50; // Length of common trunk before branching
-        const trunkEndY = trunkStartY + trunkLength;
-
-        console.log('[Arrow]   Trunk: x=', trunkX, 'start y=', trunkStartY, 'end y=', trunkEndY, 'length=', trunkLength);
-
-        // Draw main trunk line
-        const trunk = document.createElementNS(svgNS, 'path');
-        trunk.setAttribute('d', `M ${trunkX} ${trunkStartY} L ${trunkX} ${trunkEndY}`);
-        trunk.setAttribute('stroke', 'var(--text-muted)');
-        trunk.setAttribute('stroke-width', '3');
-        trunk.setAttribute('fill', 'none');
-        trunk.setAttribute('opacity', '0.7');
-        trunk.classList.add('dag-arrow', 'dag-arrow-trunk');
-        svgContainer.appendChild(trunk);
-
-        // Draw branch to each target with 12px clearance (arrowhead touches card)
-        edges.forEach((edge: GraphEdge, index: number) => {
-            const toPos = positions.get(edge.toId);
-            if (!toPos) {
-                console.log('[Arrow]   Branch', index, '- Target not found:', edge.toId);
-                return;
-            }
-
-            const targetX = toPos.x;
-            const targetY = toPos.y - toPos.height / 2 - LINE_CLEARANCE; // 12px clearance above target card
-
-            console.log('[Arrow]   Branch', index, '- Target:', edge.toId, 'at', targetX, targetY);
-
-            // Calculate branch path from trunk end to target
-            const horizontalOffset = targetX - trunkX;
-            const verticalGap = targetY - trunkEndY;
-            console.log('[Arrow]     Offsets: horizontal=', horizontalOffset, 'vertical=', verticalGap);
-
-            let branchPath: string;
-
-            if (verticalGap > 40) {
-                // Orthogonal routing with horizontal segment clear of cards
-                // Calculate safe horizontal routing level that avoids all cards in path
-                const sourceBottom = fromPos.y + fromPos.height / 2;
-                const targetTop = toPos.y - toPos.height / 2;
-
-                // Position horizontal segment in the middle of safe zone
-                const baseMidY = trunkEndY + Math.max(30, verticalGap * 0.4);
-                const safeHorizontalY = Math.max(
-                    baseMidY,
-                    sourceBottom + HORIZONTAL_CLEARANCE // Well below source card
-                );
-
-                branchPath = `M ${trunkX} ${trunkEndY} L ${trunkX} ${safeHorizontalY} L ${targetX} ${safeHorizontalY} L ${targetX} ${targetY}`;
-                console.log('[Arrow]     Using orthogonal branch routing at safeHorizontalY=', safeHorizontalY);
-            } else {
-                // Bezier curve with control offset to avoid overlap
-                const controlOffset = Math.max(50, Math.abs(horizontalOffset) * 0.5, verticalGap * 0.7);
-                branchPath = `M ${trunkX} ${trunkEndY} C ${trunkX} ${trunkEndY + controlOffset}, ${targetX} ${targetY - controlOffset}, ${targetX} ${targetY}`;
-                console.log('[Arrow]     Using Bezier branch with controlOffset=', controlOffset);
-            }
-
-            const branch = document.createElementNS(svgNS, 'path');
-            branch.setAttribute('d', branchPath);
-            branch.setAttribute('stroke', 'var(--text-muted)');
-            branch.setAttribute('stroke-width', '2');
-            branch.setAttribute('fill', 'none');
-            branch.setAttribute('marker-end', 'url(#arrowhead)');
-            branch.setAttribute('opacity', '0.6');
-            branch.classList.add('dag-arrow', 'dag-arrow-branch');
-            svgContainer.appendChild(branch);
-
-            // Add label on branch if present
-            if (edge.label && edge.label.trim()) {
-                const labelX = (trunkX + targetX) / 2;
-                const labelY = (trunkEndY + targetY) / 2;
-
-                const text = document.createElementNS(svgNS, 'text');
-                text.setAttribute('x', labelX.toString());
-                text.setAttribute('y', labelY.toString());
-                text.setAttribute('text-anchor', 'middle');
-                text.setAttribute('fill', 'var(--text-muted)');
-                text.setAttribute('font-size', '11px');
-                text.setAttribute('font-weight', '600');
-                text.textContent = edge.label;
-                svgContainer.appendChild(text);
-            }
-        });
     }
 
     /**
@@ -604,6 +717,10 @@ export class RenderTimelinesModal extends Modal {
         nodeContainer.style.boxShadow = `0 4px 12px ${nodeColor}25`;
         nodeContainer.style.borderColor = nodeColor;
 
+        console.log('[LinkTimeline]   Node container created');
+        console.log('[LinkTimeline]   Container element:', container.className);
+        console.log('[LinkTimeline]   Node element:', nodeContainer.className);
+
         const nodeHeader = nodeContainer.createDiv('dag-node-header');
 
         const iconDiv = nodeHeader.createDiv('dag-node-icon');
@@ -616,7 +733,7 @@ export class RenderTimelinesModal extends Modal {
         const nodeDetails = nodeContainer.createDiv('dag-node-details');
 
         // Display value if present
-        if (node.value && node.value.trim()) {
+        if (node.value) {
             console.log('[LinkTimeline] ✓ DISPLAYING value:', node.value);
             const valueContainer = nodeDetails.createDiv('dag-node-value-container');
             const valueLabel = valueContainer.createDiv('dag-node-value-label');

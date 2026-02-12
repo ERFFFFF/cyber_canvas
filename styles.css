@@ -128,12 +128,28 @@
    4. TIMELINE MODAL - Shared header, tab bar, and scrollable content area
    ========================================================================== */
 
-/* Make the modal fullscreen and large */
+/* Make the modal fullscreen and responsive */
 .timeline-modal-fullscreen {
     width: 95vw !important;
     height: 95vh !important;
     max-width: 95vw !important;
     max-height: 95vh !important;
+}
+
+/* Responsive modal sizing for smaller screens */
+@media (max-width: 1200px) {
+    .timeline-modal-fullscreen {
+        width: 98vw !important;
+        height: 98vh !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .timeline-modal-fullscreen {
+        width: 100vw !important;
+        height: 100vh !important;
+        border-radius: 0 !important;
+    }
 }
 
 .timeline-modal-fullscreen .modal-content {
@@ -203,6 +219,30 @@
     margin-right: auto;
 }
 
+/* Responsive timeline items */
+@media (max-width: 768px) {
+    .timeline-item {
+        max-width: 100%;
+        padding: 12px;
+        gap: 12px;
+        font-size: 14px;
+    }
+
+    .timeline-icon {
+        width: 32px !important;
+        height: 32px !important;
+        font-size: 9px !important;
+    }
+
+    .timeline-details h3 {
+        font-size: 16px !important;
+    }
+
+    .timeline-details p {
+        font-size: 13px !important;
+    }
+}
+
 .timeline-item:hover {
     transform: translateX(4px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
@@ -263,6 +303,19 @@
     z-index: 1;
 }
 
+/* Responsive layer spacing */
+@media (max-width: 1200px) {
+    .dag-layers-container {
+        gap: 60px;
+    }
+}
+
+@media (max-width: 768px) {
+    .dag-layers-container {
+        gap: 50px;
+    }
+}
+
 /* Each layer row displays nodes side-by-side */
 .dag-layer-row {
     display: flex;
@@ -272,11 +325,30 @@
     align-items: flex-start;
     flex-wrap: wrap;
     padding: 20px 0;
+    position: relative;
+    z-index: 10;
+}
+
+/* Responsive layer row spacing */
+@media (max-width: 1200px) {
+    .dag-layer-row {
+        gap: 30px;
+        padding: 15px 0;
+    }
+}
+
+@media (max-width: 768px) {
+    .dag-layer-row {
+        gap: 20px;
+        padding: 10px 0;
+    }
 }
 
 /* Wrapper for each node in the layer */
 .dag-node-wrapper {
     flex-shrink: 0;
+    position: relative;
+    z-index: 10;
 }
 
 /* Individual node card */
@@ -289,6 +361,35 @@
     background: var(--background-secondary);
     width: 280px;
     min-height: 150px;
+    position: relative;
+    z-index: 10;
+}
+
+/* Responsive node sizing */
+@media (max-width: 1200px) {
+    .dag-node {
+        width: 240px;
+        min-height: 130px;
+        padding: 12px;
+    }
+}
+
+@media (max-width: 768px) {
+    .dag-node {
+        width: 200px;
+        min-height: 110px;
+        padding: 10px;
+        font-size: 13px;
+    }
+
+    .dag-node-icon {
+        width: 32px !important;
+        height: 32px !important;
+    }
+
+    .dag-node-type {
+        font-size: 14px !important;
+    }
 }
 
 .dag-node:hover {
