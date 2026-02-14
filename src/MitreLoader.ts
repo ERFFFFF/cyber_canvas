@@ -52,9 +52,22 @@ export async function loadMitreDataset(app: App): Promise<MitreDataset> {
 
         if (await adapter.exists(jsonPath)) {
             const content = await adapter.read(jsonPath);
-            cachedDataset = JSON.parse(content);
-            console.log('[MitreLoader] ✓ Loaded full dataset from JSON. Version:', cachedDataset.version, 'Techniques:', Object.keys(cachedDataset.techniques).length);
-            return cachedDataset;
+            const stixBundle = JSON.parse(content);
+
+            // Check if it's a STIX bundle
+            if (stixBundle.type === 'bundle' && Array.isArray(stixBundle.objects)) {
+                console.debug('[MitreLoader] Parsing STIX 2.1 bundle format...');
+                cachedDataset = parseStixBundle(stixBundle);
+                console.log('[MitreLoader] ✓ Loaded full dataset from STIX bundle. Tactics:', Object.keys(cachedDataset.tactics).length, 'Techniques:', Object.keys(cachedDataset.techniques).length);
+                return cachedDataset;
+            } else if (stixBundle.version && stixBundle.tactics && stixBundle.techniques) {
+                // Old pre-processed format (backward compatibility)
+                cachedDataset = stixBundle;
+                console.log('[MitreLoader] ✓ Loaded pre-processed dataset. Version:', cachedDataset.version, 'Techniques:', Object.keys(cachedDataset.techniques).length);
+                return cachedDataset;
+            } else {
+                console.warn('[MitreLoader] Unknown JSON format');
+            }
         } else {
             console.warn('[MitreLoader] JSON file not found at:', jsonPath);
         }
@@ -67,6 +80,136 @@ export async function loadMitreDataset(app: App): Promise<MitreDataset> {
     cachedDataset = convertEmbeddedToDataset(MITRE_TACTICS, MITRE_TECHNIQUES);
     console.log('[MitreLoader] ✓ Embedded data loaded. Techniques:', Object.keys(cachedDataset.techniques).length);
     return cachedDataset;
+}
+
+/**
+ * Parse STIX 2.1 bundle format into MitreDataset.
+ */
+function parseStixBundle(stixBundle: any): MitreDataset {
+    console.debug('[MitreLoader] Parsing STIX bundle with', stixBundle.objects?.length, 'objects');
+
+    const tactics: Record<string, TacticData> = {};
+    const techniques: Record<string, TechniqueData> = {};
+
+    // Extract version info from collection metadata
+    let version = 'unknown';
+    let last_updated = new Date().toISOString().split('T')[0];
+
+    for (const obj of stixBundle.objects) {
+        if (obj.type === 'x-mitre-collection') {
+            version = obj.x_mitre_version || 'unknown';
+            last_updated = obj.modified?.split('T')[0] || last_updated;
+            console.debug('[MitreLoader] Found collection metadata - version:', version, 'updated:', last_updated);
+        }
+    }
+
+    // First pass: extract tactics
+    for (const obj of stixBundle.objects) {
+        if (obj.type === 'x-mitre-tactic' && !obj.x_mitre_deprecated) {
+            const tacticId = obj.external_references?.find((ref: any) => ref.source_name === 'mitre-attack')?.external_id;
+            if (!tacticId) continue;
+
+            const shortName = obj.x_mitre_shortname || tacticId.toLowerCase();
+            tactics[tacticId] = {
+                id: tacticId,
+                name: obj.name,
+                short_name: shortName,
+                description: obj.description || '',
+                abbreviations: generateAbbreviations(obj.name)
+            };
+        }
+    }
+
+    console.debug('[MitreLoader] Parsed', Object.keys(tactics).length, 'tactics');
+
+    // Build tactic short name to ID map for technique processing
+    const shortNameToTacticId = new Map<string, string>();
+    for (const [tacticId, tactic] of Object.entries(tactics)) {
+        shortNameToTacticId.set(tactic.short_name, tacticId);
+    }
+
+    // Second pass: extract techniques
+    for (const obj of stixBundle.objects) {
+        if (obj.type === 'attack-pattern' && !obj.x_mitre_deprecated) {
+            const techniqueId = obj.external_references?.find((ref: any) => ref.source_name === 'mitre-attack')?.external_id;
+            if (!techniqueId) continue;
+
+            // Extract tactic IDs from kill_chain_phases
+            const tacticIds: string[] = [];
+            if (obj.kill_chain_phases) {
+                for (const phase of obj.kill_chain_phases) {
+                    if (phase.kill_chain_name === 'mitre-attack') {
+                        const tacticId = shortNameToTacticId.get(phase.phase_name);
+                        if (tacticId) {
+                            tacticIds.push(tacticId);
+                        }
+                    }
+                }
+            }
+
+            // Determine parent for sub-techniques
+            let parent: string | undefined;
+            if (obj.x_mitre_is_subtechnique && techniqueId.includes('.')) {
+                parent = techniqueId.split('.')[0];
+            }
+
+            techniques[techniqueId] = {
+                id: techniqueId,
+                name: obj.name,
+                description: obj.description || '',
+                tactics: tacticIds,
+                parent,
+                url: obj.external_references?.find((ref: any) => ref.source_name === 'mitre-attack')?.url ||
+                     `https://attack.mitre.org/techniques/${techniqueId.replace('.', '/')}`
+            };
+        }
+    }
+
+    console.debug('[MitreLoader] Parsed', Object.keys(techniques).length, 'techniques');
+
+    return {
+        version,
+        last_updated,
+        tactics,
+        techniques
+    };
+}
+
+/**
+ * Generate abbreviations for a tactic name.
+ */
+function generateAbbreviations(tacticName: string): string[] {
+    const abbrevs: string[] = [];
+
+    // Generate initials (e.g., "Credential Access" -> "CA")
+    const words = tacticName.split(/[\s\-]+/);
+    if (words.length > 0) {
+        abbrevs.push(words.map(w => w[0]).join('').toUpperCase());
+    }
+
+    // Common abbreviations
+    const commonAbbrevs: Record<string, string[]> = {
+        'Reconnaissance': ['RECON'],
+        'Resource Development': ['RESOURCE', 'RES'],
+        'Initial Access': ['IA'],
+        'Execution': ['EXEC', 'EXE'],
+        'Persistence': ['PERSIST', 'PERS'],
+        'Privilege Escalation': ['PRIV', 'PE'],
+        'Defense Evasion': ['DEFENSE', 'DEF'],
+        'Credential Access': ['CRED'],
+        'Discovery': ['DISC'],
+        'Lateral Movement': ['LATERAL', 'LM'],
+        'Collection': ['COLLECT', 'COL'],
+        'Command and Control': ['C2', 'CNC'],
+        'Exfiltration': ['EXFIL'],
+        'Impact': ['IMP']
+    };
+
+    if (commonAbbrevs[tacticName]) {
+        abbrevs.push(...commonAbbrevs[tacticName]);
+    }
+
+    return abbrevs;
 }
 
 /**

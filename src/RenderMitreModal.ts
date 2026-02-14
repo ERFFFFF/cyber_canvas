@@ -39,11 +39,29 @@ interface MitreTactic {
     techniques: MitreTechnique[];
 }
 
+interface SearchState {
+    query: string;
+    keywords: string[];
+    phrases: string[];
+    isActive: boolean;
+}
+
+interface SearchMatch {
+    matched: boolean;
+    matchType?: 'id' | 'name' | 'description' | 'subtechnique';
+    matchText?: string;
+}
+
 export class RenderMitreModal extends Modal {
     private plugin: any;
     private timeProcessor: TimeTimelineProcessor;
     private mitreDataset: MitreDataset | null = null;
     private subtechniquesMap: Map<string, MitreTechnique[]> = new Map();
+    private currentSearchState: SearchState | null = null;
+    private currentTactics: MitreTactic[] | null = null;
+    private searchBar: HTMLInputElement | null = null;
+    private searchClearButton: HTMLElement | null = null;
+    private searchMatchCount: HTMLElement | null = null;
 
     constructor(app: App, plugin: any) {
         super(app);
@@ -99,6 +117,77 @@ export class RenderMitreModal extends Modal {
     }
 
     /**
+     * Toggle technique expansion (expand/collapse).
+     * Handles description swap and subtechniques rendering.
+     *
+     * @param techItem - The technique DOM element
+     * @param technique - The technique data object
+     * @param subtechniques - Array of subtechniques (if any)
+     */
+    private toggleTechniqueExpansion(
+        techItem: HTMLElement,
+        technique: MitreTechnique,
+        subtechniques: MitreTechnique[]
+    ): void {
+        const isCollapsed = techItem.hasClass('collapsed');
+        const expandIcon = techItem.querySelector('.mitre-expand-icon') as HTMLElement;
+        const descEl = techItem.querySelector('.mitre-technique-description') as HTMLElement;
+
+        if (isCollapsed) {
+            // EXPAND
+            techItem.removeClass('collapsed');
+            techItem.addClass('expanded');
+            techItem.setAttribute('data-is-expanded', 'true');
+            if (expandIcon) expandIcon.setText('▼');
+
+            // Render subtechniques if any
+            if (subtechniques.length > 0) {
+                this.renderSubtechniques(techItem, subtechniques, this.currentSearchState);
+            }
+
+            // Show full description
+            if (descEl) {
+                const fullDesc = techItem.getAttribute('data-full-description');
+                if (fullDesc) {
+                    descEl.textContent = fullDesc;
+                    // Re-apply search highlighting if active
+                    if (this.currentSearchState?.isActive) {
+                        this.highlightMatches(descEl, fullDesc, this.currentSearchState);
+                    }
+                }
+            }
+        } else {
+            // COLLAPSE
+            techItem.removeClass('expanded');
+            techItem.addClass('collapsed');
+            techItem.setAttribute('data-is-expanded', 'false');
+            if (expandIcon) expandIcon.setText('▶');
+
+            // Remove subtechniques container
+            techItem.querySelector('.mitre-subtechniques-container')?.remove();
+
+            // Show truncated description
+            if (descEl) {
+                const fullDesc = techItem.getAttribute('data-full-description');
+                const truncatedDesc = techItem.getAttribute('data-truncated-description');
+                if (truncatedDesc) {
+                    descEl.textContent = truncatedDesc;
+                    // Re-apply search highlighting if active
+                    if (this.currentSearchState?.isActive) {
+                        this.highlightMatches(descEl, truncatedDesc, this.currentSearchState);
+                    }
+                } else if (fullDesc) {
+                    const truncated = this.truncateDescription(fullDesc);
+                    descEl.textContent = truncated;
+                    if (this.currentSearchState?.isActive) {
+                        this.highlightMatches(descEl, truncated, this.currentSearchState);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Load MITRE dataset asynchronously
      */
     private async loadDataset() {
@@ -129,9 +218,122 @@ export class RenderMitreModal extends Modal {
         });
         exportBtn.addEventListener('click', () => this.exportToNavigator());
 
+        // Render search bar
+        this.renderSearchBar(headerContainer);
+
         const statsContainer = contentEl.createDiv('mitre-stats');
         const contentArea = contentEl.createDiv('mitre-content-area');
         this.renderMitreMapping(contentArea, statsContainer);
+    }
+
+    /**
+     * Render search bar in modal header.
+     *
+     * @param headerContainer - Header container element
+     */
+    private renderSearchBar(headerContainer: HTMLElement): void {
+        const searchContainer = headerContainer.createDiv('mitre-search-container');
+
+        const searchInput = searchContainer.createEl('input', {
+            type: 'text',
+            placeholder: 'Search techniques (use "quotes" for exact phrases)...',
+            cls: 'mitre-search-input'
+        });
+
+        const clearButton = searchContainer.createEl('button', {
+            text: '✕',
+            cls: 'mitre-search-clear',
+            attr: { 'aria-label': 'Clear search' }
+        });
+        clearButton.style.display = 'none';
+
+        const matchCount = searchContainer.createDiv('mitre-search-match-count');
+        matchCount.style.display = 'none';
+
+        this.searchBar = searchInput;
+        this.searchClearButton = clearButton;
+        this.searchMatchCount = matchCount;
+
+        // Debounced search handler
+        let debounceTimer: number | null = null;
+        searchInput.addEventListener('input', () => {
+            if (debounceTimer !== null) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = window.setTimeout(() => {
+                this.handleSearchInput(searchInput.value);
+            }, 300);
+        });
+
+        clearButton.addEventListener('click', () => {
+            searchInput.value = '';
+            this.handleSearchInput('');
+        });
+
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                this.handleSearchInput('');
+            }
+        });
+    }
+
+    /**
+     * Handle search input changes and re-render content.
+     *
+     * @param query - Search query string
+     */
+    private handleSearchInput(query: string): void {
+        const searchState = this.parseSearchQuery(query);
+        this.currentSearchState = searchState;
+
+        console.debug('[MitreModal] Search query:', query, '- Parsed:', searchState);
+
+        // Update clear button visibility
+        if (this.searchClearButton) {
+            this.searchClearButton.style.display = searchState.isActive ? 'block' : 'none';
+        }
+
+        // Re-render content area with search filter
+        const container = this.modalEl.querySelector('.mitre-content-area') as HTMLElement;
+        if (container && this.currentTactics) {
+            container.empty();
+
+            let matchCount = 0;
+            this.currentTactics.forEach(tactic => {
+                // Filter techniques by search
+                const matchingTechniques = tactic.techniques.filter(tech => {
+                    if (!searchState.isActive) return true;
+                    const match = this.matchesSearch(tech, searchState);
+                    if (match.matched) matchCount++;
+                    return match.matched;
+                });
+
+                // Only render tactic if it has matching techniques
+                if (matchingTechniques.length > 0) {
+                    const filteredTactic = { ...tactic, techniques: matchingTechniques };
+                    this.renderTacticSection(container, filteredTactic, searchState);
+                }
+            });
+
+            // Update match count display
+            if (this.searchMatchCount) {
+                if (searchState.isActive) {
+                    this.searchMatchCount.textContent = `${matchCount} technique${matchCount !== 1 ? 's' : ''} found`;
+                    this.searchMatchCount.style.display = 'block';
+                } else {
+                    this.searchMatchCount.style.display = 'none';
+                }
+            }
+
+            // Show "no results" message if no matches
+            if (matchCount === 0 && searchState.isActive) {
+                container.createDiv({
+                    cls: 'mitre-no-results',
+                    text: 'No techniques match your search'
+                });
+            }
+        }
     }
 
     private async renderMitreMapping(container: HTMLElement, statsContainer: HTMLElement): Promise<void> {
@@ -183,9 +385,12 @@ export class RenderMitreModal extends Modal {
             cls: 'mitre-stat-item'
         });
 
+        // Store tactics for search filtering
+        this.currentTactics = tactics;
+
         // Render tactics as columns
         tactics.forEach(tactic => {
-            this.renderTacticSection(container, tactic);
+            this.renderTacticSection(container, tactic, this.currentSearchState);
         });
     }
 
@@ -435,7 +640,11 @@ export class RenderMitreModal extends Modal {
         return technique.trim();
     }
 
-    private renderTacticSection(container: HTMLElement, tactic: MitreTactic): void {
+    private renderTacticSection(
+        container: HTMLElement,
+        tactic: MitreTactic,
+        searchState?: SearchState | null
+    ): void {
         const tacticColumn = container.createDiv('mitre-tactic-column');
 
         // Show found vs total count
@@ -458,6 +667,23 @@ export class RenderMitreModal extends Modal {
             const subtechniques = this.subtechniquesMap.get(technique.id) || [];
             const hasSubtechniques = subtechniques.length > 0;
 
+            // Check if description is long
+            const cleanedDesc = this.cleanDescription(technique.description || '');
+            const isLongDescription = cleanedDesc.length > 180;
+
+            // Expandable if long description OR has subtechniques
+            const isExpandable = isLongDescription || hasSubtechniques;
+
+            // Add data attributes for state management
+            techItem.setAttribute('data-technique-id', technique.id);
+            techItem.setAttribute('data-subtechnique-count', subtechniques.length.toString());
+            techItem.setAttribute('data-is-expandable', isExpandable.toString());
+            techItem.setAttribute('data-full-description', cleanedDesc);
+            if (isLongDescription) {
+                const truncated = this.truncateDescription(cleanedDesc);
+                techItem.setAttribute('data-truncated-description', truncated);
+            }
+
             // Apply styling based on isFound and severity
             if (!technique.isFound) {
                 techItem.addClass('mitre-technique-unfound'); // Gray, no validation
@@ -474,50 +700,19 @@ export class RenderMitreModal extends Modal {
 
             const techInfo = techItem.createDiv('mitre-technique-info');
 
-            // Add expand icon if has subtechniques
-            if (hasSubtechniques) {
+            // Add expand icon if expandable (long description OR subtechniques)
+            if (isExpandable) {
                 const expandIcon = techInfo.createEl('span', {
                     cls: 'mitre-expand-icon',
                     text: '▶'
                 });
-                techItem.addClass('has-subtechniques');
+                techItem.addClass('has-expandable');  // Updated class name
                 techItem.addClass('collapsed');
 
                 // Click handler for expand/collapse
                 techItem.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const isCollapsed = techItem.hasClass('collapsed');
-                    const descEl = techItem.querySelector('.mitre-technique-description') as HTMLElement;
-
-                    if (isCollapsed) {
-                        // EXPAND
-                        techItem.removeClass('collapsed');
-                        techItem.addClass('expanded');
-                        expandIcon.setText('▼');
-                        this.renderSubtechniques(techItem, subtechniques);
-
-                        // Show full description
-                        if (descEl) {
-                            const fullDesc = descEl.getAttribute('data-full-description');
-                            if (fullDesc) {
-                                descEl.textContent = fullDesc;
-                            }
-                        }
-                    } else {
-                        // COLLAPSE
-                        techItem.removeClass('expanded');
-                        techItem.addClass('collapsed');
-                        expandIcon.setText('▶');
-                        techItem.querySelector('.mitre-subtechniques-container')?.remove();
-
-                        // Show truncated description
-                        if (descEl) {
-                            const fullDesc = descEl.getAttribute('data-full-description');
-                            if (fullDesc) {
-                                descEl.textContent = this.truncateDescription(fullDesc);
-                            }
-                        }
-                    }
+                    this.toggleTechniqueExpansion(techItem, technique, subtechniques);
                 });
             }
 
@@ -540,27 +735,42 @@ export class RenderMitreModal extends Modal {
                 text: technique.id,
                 cls: 'mitre-technique-id'
             });
-            techInfo.createEl('span', {
-                text: technique.name,
+
+            // Add subtechnique count to name if present
+            const nameText = hasSubtechniques
+                ? `${technique.name} (${subtechniques.length})`
+                : technique.name;
+            const nameEl = techInfo.createEl('span', {
+                text: nameText,
                 cls: 'mitre-technique-name'
             });
+
+            // Apply search highlighting to name if active
+            if (searchState?.isActive) {
+                this.highlightMatches(nameEl, technique.name, searchState);
+            }
 
             // Show description for ALL techniques
             if (technique.description) {
                 const descEl = techItem.createDiv('mitre-technique-description');
-                const cleanedDesc = this.cleanDescription(technique.description);
 
-                // Store full description for expand/collapse
-                descEl.setAttribute('data-full-description', cleanedDesc);
-
-                // Show truncated version initially (collapsed state)
+                // Show truncated or full description based on state
                 const isExpanded = techItem.hasClass('expanded');
-                if (isExpanded || !hasSubtechniques) {
-                    // Show full description if expanded or no subtechniques
-                    descEl.textContent = cleanedDesc;
+                let displayText: string;
+
+                if (isExpanded || !isExpandable) {
+                    // Show full description if expanded or not expandable
+                    displayText = cleanedDesc;
                 } else {
-                    // Show truncated description if collapsed
-                    descEl.textContent = this.truncateDescription(cleanedDesc);
+                    // Show truncated description if collapsed and expandable
+                    displayText = this.truncateDescription(cleanedDesc);
+                }
+
+                descEl.textContent = displayText;
+
+                // Apply search highlighting to description if active
+                if (searchState?.isActive) {
+                    this.highlightMatches(descEl, displayText, searchState);
                 }
             }
 
@@ -572,7 +782,11 @@ export class RenderMitreModal extends Modal {
         });
     }
 
-    private renderSubtechniques(parentEl: HTMLElement, subtechniques: MitreTechnique[]): void {
+    private renderSubtechniques(
+        parentEl: HTMLElement,
+        subtechniques: MitreTechnique[],
+        searchState?: SearchState | null
+    ): void {
         const container = parentEl.createDiv({ cls: 'mitre-subtechniques-container' });
 
         subtechniques.forEach(subtech => {
@@ -611,16 +825,27 @@ export class RenderMitreModal extends Modal {
                 text: subtech.id,
                 cls: 'mitre-technique-id'
             });
-            subInfo.createEl('span', {
+
+            const nameEl = subInfo.createEl('span', {
                 text: subtech.name,
                 cls: 'mitre-technique-name'
             });
+
+            // Apply search highlighting to name if active
+            if (searchState?.isActive) {
+                this.highlightMatches(nameEl, subtech.name, searchState);
+            }
 
             // Show description (full text, no truncation for subtechniques)
             if (subtech.description) {
                 const descEl = subItem.createDiv('mitre-technique-description');
                 const cleanedDesc = this.cleanDescription(subtech.description);
                 descEl.textContent = cleanedDesc;
+
+                // Apply search highlighting to description if active
+                if (searchState?.isActive) {
+                    this.highlightMatches(descEl, cleanedDesc, searchState);
+                }
             }
 
             // Show count badge for found subtechniques
@@ -629,6 +854,191 @@ export class RenderMitreModal extends Modal {
                 subCount.textContent = `${subtech.count} card${subtech.count > 1 ? 's' : ''}`;
             }
         });
+    }
+
+    /**
+     * Parse search query into keywords and phrases.
+     *
+     * @param query - Raw search query string
+     * @returns SearchState object with parsed keywords and phrases
+     */
+    private parseSearchQuery(query: string): SearchState {
+        if (!query || !query.trim()) {
+            return {
+                query: '',
+                keywords: [],
+                phrases: [],
+                isActive: false
+            };
+        }
+
+        const trimmedQuery = query.trim();
+
+        // Handle unmatched quotes (odd number of quotes)
+        const quoteCount = (trimmedQuery.match(/"/g) || []).length;
+        let processedQuery = trimmedQuery;
+        if (quoteCount % 2 !== 0) {
+            // Remove the last unmatched quote
+            const lastQuoteIndex = processedQuery.lastIndexOf('"');
+            processedQuery = processedQuery.substring(0, lastQuoteIndex) + processedQuery.substring(lastQuoteIndex + 1);
+        }
+
+        // Extract quoted phrases
+        const phrases: string[] = [];
+        const phraseRegex = /"([^"]+)"/g;
+        let match;
+        while ((match = phraseRegex.exec(processedQuery)) !== null) {
+            phrases.push(match[1].toLowerCase());
+        }
+
+        // Remove quoted phrases from query and split remaining into keywords
+        const remainingQuery = processedQuery.replace(/"[^"]+"/g, ' ');
+        const keywords = remainingQuery
+            .split(/\s+/)
+            .map(k => k.trim().toLowerCase())
+            .filter(k => k.length > 0);
+
+        return {
+            query: trimmedQuery,
+            keywords,
+            phrases,
+            isActive: keywords.length > 0 || phrases.length > 0
+        };
+    }
+
+    /**
+     * Check if text matches all keywords and phrases in search state.
+     *
+     * @param text - Text to check
+     * @param searchState - Parsed search state
+     * @returns True if text matches all search terms
+     */
+    private textMatchesQuery(text: string, searchState: SearchState): boolean {
+        if (!searchState.isActive) return true;
+
+        const lowerText = text.toLowerCase();
+
+        // Check all keywords are present
+        const allKeywordsMatch = searchState.keywords.every(keyword =>
+            lowerText.includes(keyword)
+        );
+
+        // Check all phrases are present
+        const allPhrasesMatch = searchState.phrases.every(phrase =>
+            lowerText.includes(phrase)
+        );
+
+        return allKeywordsMatch && allPhrasesMatch;
+    }
+
+    /**
+     * Check if a technique matches the search query.
+     *
+     * @param technique - Technique to check
+     * @param searchState - Parsed search state
+     * @returns SearchMatch result with match details
+     */
+    private matchesSearch(technique: MitreTechnique, searchState: SearchState): SearchMatch {
+        if (!searchState.isActive) {
+            return { matched: true };
+        }
+
+        // Check technique ID
+        if (this.textMatchesQuery(technique.id, searchState)) {
+            return {
+                matched: true,
+                matchType: 'id',
+                matchText: technique.id
+            };
+        }
+
+        // Check technique name
+        if (this.textMatchesQuery(technique.name, searchState)) {
+            return {
+                matched: true,
+                matchType: 'name',
+                matchText: technique.name
+            };
+        }
+
+        // Check technique description
+        if (technique.description && this.textMatchesQuery(technique.description, searchState)) {
+            return {
+                matched: true,
+                matchType: 'description',
+                matchText: technique.description
+            };
+        }
+
+        // Check subtechniques (if parent matches via subtechnique, show parent)
+        const subtechniques = this.subtechniquesMap.get(technique.id) || [];
+        for (const subtech of subtechniques) {
+            if (this.textMatchesQuery(subtech.id, searchState) ||
+                this.textMatchesQuery(subtech.name, searchState) ||
+                (subtech.description && this.textMatchesQuery(subtech.description, searchState))) {
+                return {
+                    matched: true,
+                    matchType: 'subtechnique',
+                    matchText: subtech.name
+                };
+            }
+        }
+
+        return { matched: false };
+    }
+
+    /**
+     * Escape HTML to prevent XSS injection.
+     *
+     * @param text - Text to escape
+     * @returns HTML-escaped text
+     */
+    private escapeHtml(text: string): string {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    /**
+     * Escape special regex characters.
+     *
+     * @param text - Text to escape
+     * @returns Regex-escaped text
+     */
+    private escapeRegex(text: string): string {
+        return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    /**
+     * Highlight search matches in text element.
+     *
+     * @param element - DOM element to highlight
+     * @param originalText - Original text content
+     * @param searchState - Parsed search state
+     */
+    private highlightMatches(element: HTMLElement, originalText: string, searchState: SearchState): void {
+        if (!searchState.isActive || !originalText) {
+            return;
+        }
+
+        let escapedText = this.escapeHtml(originalText);
+
+        // Highlight phrases first (longer matches)
+        searchState.phrases.forEach(phrase => {
+            const escapedPhrase = this.escapeRegex(phrase);
+            const regex = new RegExp(`(${escapedPhrase})`, 'gi');
+            escapedText = escapedText.replace(regex, '<mark class="mitre-search-highlight">$1</mark>');
+        });
+
+        // Highlight keywords (avoid double-wrapping inside existing marks)
+        searchState.keywords.forEach(keyword => {
+            const escapedKeyword = this.escapeRegex(keyword);
+            // Use negative lookahead to avoid matching inside existing <mark> tags
+            const regex = new RegExp(`(?!<mark[^>]*>)(${escapedKeyword})(?![^<]*<\/mark>)`, 'gi');
+            escapedText = escapedText.replace(regex, '<mark class="mitre-search-highlight">$1</mark>');
+        });
+
+        element.innerHTML = escapedText;
     }
 
     private async exportToNavigator(): Promise<void> {

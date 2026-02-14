@@ -1117,9 +1117,19 @@ async function loadMitreDataset(app) {
     console.debug("[MitreLoader] Attempting to load from:", jsonPath);
     if (await adapter.exists(jsonPath)) {
       const content = await adapter.read(jsonPath);
-      cachedDataset = JSON.parse(content);
-      console.log("[MitreLoader] \u2713 Loaded full dataset from JSON. Version:", cachedDataset.version, "Techniques:", Object.keys(cachedDataset.techniques).length);
-      return cachedDataset;
+      const stixBundle = JSON.parse(content);
+      if (stixBundle.type === "bundle" && Array.isArray(stixBundle.objects)) {
+        console.debug("[MitreLoader] Parsing STIX 2.1 bundle format...");
+        cachedDataset = parseStixBundle(stixBundle);
+        console.log("[MitreLoader] \u2713 Loaded full dataset from STIX bundle. Tactics:", Object.keys(cachedDataset.tactics).length, "Techniques:", Object.keys(cachedDataset.techniques).length);
+        return cachedDataset;
+      } else if (stixBundle.version && stixBundle.tactics && stixBundle.techniques) {
+        cachedDataset = stixBundle;
+        console.log("[MitreLoader] \u2713 Loaded pre-processed dataset. Version:", cachedDataset.version, "Techniques:", Object.keys(cachedDataset.techniques).length);
+        return cachedDataset;
+      } else {
+        console.warn("[MitreLoader] Unknown JSON format");
+      }
     } else {
       console.warn("[MitreLoader] JSON file not found at:", jsonPath);
     }
@@ -1130,6 +1140,105 @@ async function loadMitreDataset(app) {
   cachedDataset = convertEmbeddedToDataset(MITRE_TACTICS, MITRE_TECHNIQUES);
   console.log("[MitreLoader] \u2713 Embedded data loaded. Techniques:", Object.keys(cachedDataset.techniques).length);
   return cachedDataset;
+}
+function parseStixBundle(stixBundle) {
+  var _a, _b, _c, _d, _e, _f, _g, _h;
+  console.debug("[MitreLoader] Parsing STIX bundle with", (_a = stixBundle.objects) == null ? void 0 : _a.length, "objects");
+  const tactics = {};
+  const techniques = {};
+  let version = "unknown";
+  let last_updated = new Date().toISOString().split("T")[0];
+  for (const obj of stixBundle.objects) {
+    if (obj.type === "x-mitre-collection") {
+      version = obj.x_mitre_version || "unknown";
+      last_updated = ((_b = obj.modified) == null ? void 0 : _b.split("T")[0]) || last_updated;
+      console.debug("[MitreLoader] Found collection metadata - version:", version, "updated:", last_updated);
+    }
+  }
+  for (const obj of stixBundle.objects) {
+    if (obj.type === "x-mitre-tactic" && !obj.x_mitre_deprecated) {
+      const tacticId = (_d = (_c = obj.external_references) == null ? void 0 : _c.find((ref) => ref.source_name === "mitre-attack")) == null ? void 0 : _d.external_id;
+      if (!tacticId)
+        continue;
+      const shortName = obj.x_mitre_shortname || tacticId.toLowerCase();
+      tactics[tacticId] = {
+        id: tacticId,
+        name: obj.name,
+        short_name: shortName,
+        description: obj.description || "",
+        abbreviations: generateAbbreviations(obj.name)
+      };
+    }
+  }
+  console.debug("[MitreLoader] Parsed", Object.keys(tactics).length, "tactics");
+  const shortNameToTacticId = /* @__PURE__ */ new Map();
+  for (const [tacticId, tactic] of Object.entries(tactics)) {
+    shortNameToTacticId.set(tactic.short_name, tacticId);
+  }
+  for (const obj of stixBundle.objects) {
+    if (obj.type === "attack-pattern" && !obj.x_mitre_deprecated) {
+      const techniqueId = (_f = (_e = obj.external_references) == null ? void 0 : _e.find((ref) => ref.source_name === "mitre-attack")) == null ? void 0 : _f.external_id;
+      if (!techniqueId)
+        continue;
+      const tacticIds = [];
+      if (obj.kill_chain_phases) {
+        for (const phase of obj.kill_chain_phases) {
+          if (phase.kill_chain_name === "mitre-attack") {
+            const tacticId = shortNameToTacticId.get(phase.phase_name);
+            if (tacticId) {
+              tacticIds.push(tacticId);
+            }
+          }
+        }
+      }
+      let parent;
+      if (obj.x_mitre_is_subtechnique && techniqueId.includes(".")) {
+        parent = techniqueId.split(".")[0];
+      }
+      techniques[techniqueId] = {
+        id: techniqueId,
+        name: obj.name,
+        description: obj.description || "",
+        tactics: tacticIds,
+        parent,
+        url: ((_h = (_g = obj.external_references) == null ? void 0 : _g.find((ref) => ref.source_name === "mitre-attack")) == null ? void 0 : _h.url) || `https://attack.mitre.org/techniques/${techniqueId.replace(".", "/")}`
+      };
+    }
+  }
+  console.debug("[MitreLoader] Parsed", Object.keys(techniques).length, "techniques");
+  return {
+    version,
+    last_updated,
+    tactics,
+    techniques
+  };
+}
+function generateAbbreviations(tacticName) {
+  const abbrevs = [];
+  const words = tacticName.split(/[\s\-]+/);
+  if (words.length > 0) {
+    abbrevs.push(words.map((w) => w[0]).join("").toUpperCase());
+  }
+  const commonAbbrevs = {
+    "Reconnaissance": ["RECON"],
+    "Resource Development": ["RESOURCE", "RES"],
+    "Initial Access": ["IA"],
+    "Execution": ["EXEC", "EXE"],
+    "Persistence": ["PERSIST", "PERS"],
+    "Privilege Escalation": ["PRIV", "PE"],
+    "Defense Evasion": ["DEFENSE", "DEF"],
+    "Credential Access": ["CRED"],
+    "Discovery": ["DISC"],
+    "Lateral Movement": ["LATERAL", "LM"],
+    "Collection": ["COLLECT", "COL"],
+    "Command and Control": ["C2", "CNC"],
+    "Exfiltration": ["EXFIL"],
+    "Impact": ["IMP"]
+  };
+  if (commonAbbrevs[tacticName]) {
+    abbrevs.push(...commonAbbrevs[tacticName]);
+  }
+  return abbrevs;
 }
 function convertEmbeddedToDataset(oldTactics, oldTechniques) {
   console.debug("[MitreLoader] Converting embedded data to dataset format");
@@ -1227,6 +1336,11 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
     super(app);
     this.mitreDataset = null;
     this.subtechniquesMap = /* @__PURE__ */ new Map();
+    this.currentSearchState = null;
+    this.currentTactics = null;
+    this.searchBar = null;
+    this.searchClearButton = null;
+    this.searchMatchCount = null;
     this.plugin = plugin;
     this.timeProcessor = new TimeTimelineProcessor(app, plugin, IOC_TYPES);
     this.loadDataset();
@@ -1265,6 +1379,62 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
     return truncated + "...";
   }
   /**
+   * Toggle technique expansion (expand/collapse).
+   * Handles description swap and subtechniques rendering.
+   *
+   * @param techItem - The technique DOM element
+   * @param technique - The technique data object
+   * @param subtechniques - Array of subtechniques (if any)
+   */
+  toggleTechniqueExpansion(techItem, technique, subtechniques) {
+    var _a, _b, _c, _d;
+    const isCollapsed = techItem.hasClass("collapsed");
+    const expandIcon = techItem.querySelector(".mitre-expand-icon");
+    const descEl = techItem.querySelector(".mitre-technique-description");
+    if (isCollapsed) {
+      techItem.removeClass("collapsed");
+      techItem.addClass("expanded");
+      techItem.setAttribute("data-is-expanded", "true");
+      if (expandIcon)
+        expandIcon.setText("\u25BC");
+      if (subtechniques.length > 0) {
+        this.renderSubtechniques(techItem, subtechniques, this.currentSearchState);
+      }
+      if (descEl) {
+        const fullDesc = techItem.getAttribute("data-full-description");
+        if (fullDesc) {
+          descEl.textContent = fullDesc;
+          if ((_a = this.currentSearchState) == null ? void 0 : _a.isActive) {
+            this.highlightMatches(descEl, fullDesc, this.currentSearchState);
+          }
+        }
+      }
+    } else {
+      techItem.removeClass("expanded");
+      techItem.addClass("collapsed");
+      techItem.setAttribute("data-is-expanded", "false");
+      if (expandIcon)
+        expandIcon.setText("\u25B6");
+      (_b = techItem.querySelector(".mitre-subtechniques-container")) == null ? void 0 : _b.remove();
+      if (descEl) {
+        const fullDesc = techItem.getAttribute("data-full-description");
+        const truncatedDesc = techItem.getAttribute("data-truncated-description");
+        if (truncatedDesc) {
+          descEl.textContent = truncatedDesc;
+          if ((_c = this.currentSearchState) == null ? void 0 : _c.isActive) {
+            this.highlightMatches(descEl, truncatedDesc, this.currentSearchState);
+          }
+        } else if (fullDesc) {
+          const truncated = this.truncateDescription(fullDesc);
+          descEl.textContent = truncated;
+          if ((_d = this.currentSearchState) == null ? void 0 : _d.isActive) {
+            this.highlightMatches(descEl, truncated, this.currentSearchState);
+          }
+        }
+      }
+    }
+  }
+  /**
    * Load MITRE dataset asynchronously
    */
   async loadDataset() {
@@ -1288,9 +1458,99 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       cls: "mitre-export-button"
     });
     exportBtn.addEventListener("click", () => this.exportToNavigator());
+    this.renderSearchBar(headerContainer);
     const statsContainer = contentEl.createDiv("mitre-stats");
     const contentArea = contentEl.createDiv("mitre-content-area");
     this.renderMitreMapping(contentArea, statsContainer);
+  }
+  /**
+   * Render search bar in modal header.
+   *
+   * @param headerContainer - Header container element
+   */
+  renderSearchBar(headerContainer) {
+    const searchContainer = headerContainer.createDiv("mitre-search-container");
+    const searchInput = searchContainer.createEl("input", {
+      type: "text",
+      placeholder: 'Search techniques (use "quotes" for exact phrases)...',
+      cls: "mitre-search-input"
+    });
+    const clearButton = searchContainer.createEl("button", {
+      text: "\u2715",
+      cls: "mitre-search-clear",
+      attr: { "aria-label": "Clear search" }
+    });
+    clearButton.style.display = "none";
+    const matchCount = searchContainer.createDiv("mitre-search-match-count");
+    matchCount.style.display = "none";
+    this.searchBar = searchInput;
+    this.searchClearButton = clearButton;
+    this.searchMatchCount = matchCount;
+    let debounceTimer = null;
+    searchInput.addEventListener("input", () => {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = window.setTimeout(() => {
+        this.handleSearchInput(searchInput.value);
+      }, 300);
+    });
+    clearButton.addEventListener("click", () => {
+      searchInput.value = "";
+      this.handleSearchInput("");
+    });
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        searchInput.value = "";
+        this.handleSearchInput("");
+      }
+    });
+  }
+  /**
+   * Handle search input changes and re-render content.
+   *
+   * @param query - Search query string
+   */
+  handleSearchInput(query) {
+    const searchState = this.parseSearchQuery(query);
+    this.currentSearchState = searchState;
+    console.debug("[MitreModal] Search query:", query, "- Parsed:", searchState);
+    if (this.searchClearButton) {
+      this.searchClearButton.style.display = searchState.isActive ? "block" : "none";
+    }
+    const container = this.modalEl.querySelector(".mitre-content-area");
+    if (container && this.currentTactics) {
+      container.empty();
+      let matchCount = 0;
+      this.currentTactics.forEach((tactic) => {
+        const matchingTechniques = tactic.techniques.filter((tech) => {
+          if (!searchState.isActive)
+            return true;
+          const match = this.matchesSearch(tech, searchState);
+          if (match.matched)
+            matchCount++;
+          return match.matched;
+        });
+        if (matchingTechniques.length > 0) {
+          const filteredTactic = { ...tactic, techniques: matchingTechniques };
+          this.renderTacticSection(container, filteredTactic, searchState);
+        }
+      });
+      if (this.searchMatchCount) {
+        if (searchState.isActive) {
+          this.searchMatchCount.textContent = `${matchCount} technique${matchCount !== 1 ? "s" : ""} found`;
+          this.searchMatchCount.style.display = "block";
+        } else {
+          this.searchMatchCount.style.display = "none";
+        }
+      }
+      if (matchCount === 0 && searchState.isActive) {
+        container.createDiv({
+          cls: "mitre-no-results",
+          text: "No techniques match your search"
+        });
+      }
+    }
   }
   async renderMitreMapping(container, statsContainer) {
     console.debug("[MitreModal] ===== STARTING DATA EXTRACTION =====");
@@ -1329,8 +1589,9 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       text: `\u{1F4C7} IOC Cards: ${iocData.length} total`,
       cls: "mitre-stat-item"
     });
+    this.currentTactics = tactics;
     tactics.forEach((tactic) => {
-      this.renderTacticSection(container, tactic);
+      this.renderTacticSection(container, tactic, this.currentSearchState);
     });
   }
   async aggregateTacticsTechniques(iocData) {
@@ -1539,7 +1800,7 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
     console.debug("[MitreModal] Using raw technique string as name:", technique);
     return technique.trim();
   }
-  renderTacticSection(container, tactic) {
+  renderTacticSection(container, tactic, searchState) {
     const tacticColumn = container.createDiv("mitre-tactic-column");
     const foundCount = tactic.techniques.filter((t) => t.isFound).length;
     const totalCount = tactic.techniques.length;
@@ -1554,6 +1815,17 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       const techItem = techniqueList.createDiv("mitre-technique-item");
       const subtechniques = this.subtechniquesMap.get(technique.id) || [];
       const hasSubtechniques = subtechniques.length > 0;
+      const cleanedDesc = this.cleanDescription(technique.description || "");
+      const isLongDescription = cleanedDesc.length > 180;
+      const isExpandable = isLongDescription || hasSubtechniques;
+      techItem.setAttribute("data-technique-id", technique.id);
+      techItem.setAttribute("data-subtechnique-count", subtechniques.length.toString());
+      techItem.setAttribute("data-is-expandable", isExpandable.toString());
+      techItem.setAttribute("data-full-description", cleanedDesc);
+      if (isLongDescription) {
+        const truncated = this.truncateDescription(cleanedDesc);
+        techItem.setAttribute("data-truncated-description", truncated);
+      }
       if (!technique.isFound) {
         techItem.addClass("mitre-technique-unfound");
       } else {
@@ -1564,41 +1836,16 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
         }
       }
       const techInfo = techItem.createDiv("mitre-technique-info");
-      if (hasSubtechniques) {
+      if (isExpandable) {
         const expandIcon = techInfo.createEl("span", {
           cls: "mitre-expand-icon",
           text: "\u25B6"
         });
-        techItem.addClass("has-subtechniques");
+        techItem.addClass("has-expandable");
         techItem.addClass("collapsed");
         techItem.addEventListener("click", (e) => {
-          var _a;
           e.stopPropagation();
-          const isCollapsed = techItem.hasClass("collapsed");
-          const descEl = techItem.querySelector(".mitre-technique-description");
-          if (isCollapsed) {
-            techItem.removeClass("collapsed");
-            techItem.addClass("expanded");
-            expandIcon.setText("\u25BC");
-            this.renderSubtechniques(techItem, subtechniques);
-            if (descEl) {
-              const fullDesc = descEl.getAttribute("data-full-description");
-              if (fullDesc) {
-                descEl.textContent = fullDesc;
-              }
-            }
-          } else {
-            techItem.removeClass("expanded");
-            techItem.addClass("collapsed");
-            expandIcon.setText("\u25B6");
-            (_a = techItem.querySelector(".mitre-subtechniques-container")) == null ? void 0 : _a.remove();
-            if (descEl) {
-              const fullDesc = descEl.getAttribute("data-full-description");
-              if (fullDesc) {
-                descEl.textContent = this.truncateDescription(fullDesc);
-              }
-            }
-          }
+          this.toggleTechniqueExpansion(techItem, technique, subtechniques);
         });
       }
       if (technique.isFound && technique.severity !== "valid" && technique.severity !== "not_found") {
@@ -1616,19 +1863,26 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
         text: technique.id,
         cls: "mitre-technique-id"
       });
-      techInfo.createEl("span", {
-        text: technique.name,
+      const nameText = hasSubtechniques ? `${technique.name} (${subtechniques.length})` : technique.name;
+      const nameEl = techInfo.createEl("span", {
+        text: nameText,
         cls: "mitre-technique-name"
       });
+      if (searchState == null ? void 0 : searchState.isActive) {
+        this.highlightMatches(nameEl, technique.name, searchState);
+      }
       if (technique.description) {
         const descEl = techItem.createDiv("mitre-technique-description");
-        const cleanedDesc = this.cleanDescription(technique.description);
-        descEl.setAttribute("data-full-description", cleanedDesc);
         const isExpanded = techItem.hasClass("expanded");
-        if (isExpanded || !hasSubtechniques) {
-          descEl.textContent = cleanedDesc;
+        let displayText;
+        if (isExpanded || !isExpandable) {
+          displayText = cleanedDesc;
         } else {
-          descEl.textContent = this.truncateDescription(cleanedDesc);
+          displayText = this.truncateDescription(cleanedDesc);
+        }
+        descEl.textContent = displayText;
+        if (searchState == null ? void 0 : searchState.isActive) {
+          this.highlightMatches(descEl, displayText, searchState);
         }
       }
       if (technique.isFound) {
@@ -1637,7 +1891,7 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       }
     });
   }
-  renderSubtechniques(parentEl, subtechniques) {
+  renderSubtechniques(parentEl, subtechniques, searchState) {
     const container = parentEl.createDiv({ cls: "mitre-subtechniques-container" });
     subtechniques.forEach((subtech) => {
       const subItem = container.createDiv("mitre-technique-item mitre-subtechnique");
@@ -1666,20 +1920,170 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
         text: subtech.id,
         cls: "mitre-technique-id"
       });
-      subInfo.createEl("span", {
+      const nameEl = subInfo.createEl("span", {
         text: subtech.name,
         cls: "mitre-technique-name"
       });
+      if (searchState == null ? void 0 : searchState.isActive) {
+        this.highlightMatches(nameEl, subtech.name, searchState);
+      }
       if (subtech.description) {
         const descEl = subItem.createDiv("mitre-technique-description");
         const cleanedDesc = this.cleanDescription(subtech.description);
         descEl.textContent = cleanedDesc;
+        if (searchState == null ? void 0 : searchState.isActive) {
+          this.highlightMatches(descEl, cleanedDesc, searchState);
+        }
       }
       if (subtech.isFound) {
         const subCount = subItem.createDiv("mitre-technique-count-badge");
         subCount.textContent = `${subtech.count} card${subtech.count > 1 ? "s" : ""}`;
       }
     });
+  }
+  /**
+   * Parse search query into keywords and phrases.
+   *
+   * @param query - Raw search query string
+   * @returns SearchState object with parsed keywords and phrases
+   */
+  parseSearchQuery(query) {
+    if (!query || !query.trim()) {
+      return {
+        query: "",
+        keywords: [],
+        phrases: [],
+        isActive: false
+      };
+    }
+    const trimmedQuery = query.trim();
+    const quoteCount = (trimmedQuery.match(/"/g) || []).length;
+    let processedQuery = trimmedQuery;
+    if (quoteCount % 2 !== 0) {
+      const lastQuoteIndex = processedQuery.lastIndexOf('"');
+      processedQuery = processedQuery.substring(0, lastQuoteIndex) + processedQuery.substring(lastQuoteIndex + 1);
+    }
+    const phrases = [];
+    const phraseRegex = /"([^"]+)"/g;
+    let match;
+    while ((match = phraseRegex.exec(processedQuery)) !== null) {
+      phrases.push(match[1].toLowerCase());
+    }
+    const remainingQuery = processedQuery.replace(/"[^"]+"/g, " ");
+    const keywords = remainingQuery.split(/\s+/).map((k) => k.trim().toLowerCase()).filter((k) => k.length > 0);
+    return {
+      query: trimmedQuery,
+      keywords,
+      phrases,
+      isActive: keywords.length > 0 || phrases.length > 0
+    };
+  }
+  /**
+   * Check if text matches all keywords and phrases in search state.
+   *
+   * @param text - Text to check
+   * @param searchState - Parsed search state
+   * @returns True if text matches all search terms
+   */
+  textMatchesQuery(text, searchState) {
+    if (!searchState.isActive)
+      return true;
+    const lowerText = text.toLowerCase();
+    const allKeywordsMatch = searchState.keywords.every(
+      (keyword) => lowerText.includes(keyword)
+    );
+    const allPhrasesMatch = searchState.phrases.every(
+      (phrase) => lowerText.includes(phrase)
+    );
+    return allKeywordsMatch && allPhrasesMatch;
+  }
+  /**
+   * Check if a technique matches the search query.
+   *
+   * @param technique - Technique to check
+   * @param searchState - Parsed search state
+   * @returns SearchMatch result with match details
+   */
+  matchesSearch(technique, searchState) {
+    if (!searchState.isActive) {
+      return { matched: true };
+    }
+    if (this.textMatchesQuery(technique.id, searchState)) {
+      return {
+        matched: true,
+        matchType: "id",
+        matchText: technique.id
+      };
+    }
+    if (this.textMatchesQuery(technique.name, searchState)) {
+      return {
+        matched: true,
+        matchType: "name",
+        matchText: technique.name
+      };
+    }
+    if (technique.description && this.textMatchesQuery(technique.description, searchState)) {
+      return {
+        matched: true,
+        matchType: "description",
+        matchText: technique.description
+      };
+    }
+    const subtechniques = this.subtechniquesMap.get(technique.id) || [];
+    for (const subtech of subtechniques) {
+      if (this.textMatchesQuery(subtech.id, searchState) || this.textMatchesQuery(subtech.name, searchState) || subtech.description && this.textMatchesQuery(subtech.description, searchState)) {
+        return {
+          matched: true,
+          matchType: "subtechnique",
+          matchText: subtech.name
+        };
+      }
+    }
+    return { matched: false };
+  }
+  /**
+   * Escape HTML to prevent XSS injection.
+   *
+   * @param text - Text to escape
+   * @returns HTML-escaped text
+   */
+  escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+  /**
+   * Escape special regex characters.
+   *
+   * @param text - Text to escape
+   * @returns Regex-escaped text
+   */
+  escapeRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  /**
+   * Highlight search matches in text element.
+   *
+   * @param element - DOM element to highlight
+   * @param originalText - Original text content
+   * @param searchState - Parsed search state
+   */
+  highlightMatches(element, originalText, searchState) {
+    if (!searchState.isActive || !originalText) {
+      return;
+    }
+    let escapedText = this.escapeHtml(originalText);
+    searchState.phrases.forEach((phrase) => {
+      const escapedPhrase = this.escapeRegex(phrase);
+      const regex = new RegExp(`(${escapedPhrase})`, "gi");
+      escapedText = escapedText.replace(regex, '<mark class="mitre-search-highlight">$1</mark>');
+    });
+    searchState.keywords.forEach((keyword) => {
+      const escapedKeyword = this.escapeRegex(keyword);
+      const regex = new RegExp(`(?!<mark[^>]*>)(${escapedKeyword})(?![^<]*</mark>)`, "gi");
+      escapedText = escapedText.replace(regex, '<mark class="mitre-search-highlight">$1</mark>');
+    });
+    element.innerHTML = escapedText;
   }
   async exportToNavigator() {
     console.debug("[MitreModal] ===== EXPORTING =====");
