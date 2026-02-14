@@ -279,254 +279,495 @@
 }
 
 /* ==========================================================================
-   6. LINK TIMELINE (DAG) - Horizontal layered graph with SVG arrows
+   6. MITRE MODAL - ATT&CK Technique Mapper
    ========================================================================== */
 
-/* Main container for the layered DAG - scrollable in both directions */
-.dag-timeline-container {
-    position: relative;
-    padding: 40px;
-    height: 100%;
-    overflow: auto;
-    background: var(--background-primary);
-    min-width: 100%;
-    min-height: 100%;
+.mitre-modal-fullscreen {
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
 }
 
-/* Container for layers (positioned relative for SVG absolute positioning) */
-.dag-layers-container {
-    position: relative;
+.mitre-modal-fullscreen .modal-content {
+    /* FIX: Proper flex structure for height calculations */
     display: flex;
     flex-direction: column;
-    gap: 80px;
-    min-width: max-content;
-    z-index: 1;
+    height: 100%;
+    max-height: 90vh;
+    overflow: hidden; /* Prevent double scrollbars */
 }
 
-/* Responsive layer spacing */
-@media (max-width: 1200px) {
-    .dag-layers-container {
-        gap: 60px;
-    }
+.mitre-modal-header {
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--background-modifier-border);
+    /* FIX: Prevent header from shrinking */
+    flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
-    .dag-layers-container {
-        gap: 50px;
-    }
+.mitre-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
-/* Each layer row displays nodes side-by-side */
-.dag-layer-row {
+.mitre-export-button {
+    padding: 10px 20px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mitre-export-button:hover {
+    background: var(--interactive-accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Column-based layout for tactics */
+.mitre-content-area {
+    /* FIX: Use flex to fill remaining space instead of fixed heights */
+    flex: 1;
+    min-height: 0; /* Critical for flex scrolling */
+
+    /* CHANGED: Horizontal flex layout for side-by-side tactics */
     display: flex;
     flex-direction: row;
-    gap: 40px;
-    justify-content: center;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    padding: 20px 0;
-    position: relative;
-    z-index: 10;
+    gap: 24px;
+    align-items: start;
+
+    /* CHANGED: Horizontal scrolling for all 14 tactics */
+    overflow-y: hidden;
+    overflow-x: auto;
+    padding: 20px;
 }
 
-/* Responsive layer row spacing */
-@media (max-width: 1200px) {
-    .dag-layer-row {
-        gap: 30px;
-        padding: 15px 0;
-    }
-}
-
-@media (max-width: 768px) {
-    .dag-layer-row {
-        gap: 20px;
-        padding: 10px 0;
-    }
-}
-
-/* Wrapper for each node in the layer */
-.dag-node-wrapper {
-    flex-shrink: 0;
-    position: relative;
-    z-index: 10;
-}
-
-/* Individual node card */
-.dag-node {
-    padding: 16px;
-    border-radius: 8px;
-    border: 2px solid var(--background-modifier-border);
-    transition: all 0.2s ease;
-    cursor: default;
-    background: var(--background-secondary);
-    width: 280px;
-    min-height: 150px;
-    position: relative;
-    z-index: 10;
-}
-
-/* Responsive node sizing */
-@media (max-width: 1200px) {
-    .dag-node {
-        width: 240px;
-        min-height: 130px;
-        padding: 12px;
-    }
-}
-
-@media (max-width: 768px) {
-    .dag-node {
-        width: 200px;
-        min-height: 110px;
-        padding: 10px;
-        font-size: 13px;
-    }
-
-    .dag-node-icon {
-        width: 32px !important;
-        height: 32px !important;
-    }
-
-    .dag-node-type {
-        font-size: 14px !important;
-    }
-}
-
-.dag-node:hover {
-    transform: scale(1.05);
-}
-
-/* Node header with icon and type */
-.dag-node-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.dag-node-icon {
-    width: 40px;
-    height: 40px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    border: 2px solid var(--background-modifier-border);
-}
-
-.dag-node-type {
-    font-weight: 700;
+.mitre-empty-message {
+    text-align: center;
+    padding: 60px 40px;
+    color: var(--text-muted);
     font-size: 16px;
+}
+
+.mitre-stats {
+    display: flex;
+    flex-direction: row;     /* Horizontal layout for stats items */
+    gap: 24px;               /* Space between stats */
+    justify-content: center; /* Center the stats */
+    margin-bottom: 16px;     /* Space before content area */
+    padding: 16px 20px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    flex-shrink: 0;          /* Prevent shrinking */
+}
+
+.mitre-stat-item {
+    font-size: 14px;
+    font-weight: 600;
     color: var(--text-normal);
 }
 
-/* Node details section */
-.dag-node-details {
+/* Each tactic is a vertical column */
+.mitre-tactic-column {
+    /* CHANGED: Fixed width for horizontal layout */
+    flex: 0 0 350px;
+    min-width: 350px;
+
+    border: 2px solid var(--background-modifier-border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--background-primary);
+
+    /* FIX: Create isolated stacking context to prevent sticky header overlap */
+    isolation: isolate;
+    contain: layout style;
+
+    /* CHANGED: Allow full height without restriction */
+    height: 100%;
+    /* max-height: 600px; ← REMOVED: Let columns fill available vertical space */
     display: flex;
     flex-direction: column;
-    gap: 8px;
 }
 
-.dag-node-value-container {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.mitre-tactic-header {
+    padding: 16px 20px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+
+    /* FIX: Prevent header from shrinking */
+    flex-shrink: 0;
 }
 
-.dag-node-value-label {
+.mitre-tactic-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-accent);
+}
+
+.mitre-technique-count {
     font-size: 11px;
-    font-weight: 600;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    font-weight: 600;
+    display: block;
+    margin-top: 4px;
 }
 
-.dag-node-value-text {
+/* Technique list inside each column */
+.mitre-technique-list {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;  /* Increased from 8px for better separation */
+
+    /* FIX: Make this the scrollable area within each column */
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0; /* Critical for flex scrolling */
+}
+
+.mitre-technique-item {
+    padding: 16px;
+    min-height: 120px;
+    border-radius: 6px;
+    background: var(--background-secondary);
+    transition: all 0.2s ease;
+    border-left: 4px solid var(--interactive-success);
+    position: relative;
+    z-index: 0;
+    overflow: visible;  /* Ensure subtechniques aren't clipped */
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 12px;  /* Space between techniques */
+}
+
+.mitre-technique-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+/* Warning (yellow) - Unknown technique or tactic */
+.mitre-technique-warning {
+    border-left-color: #ffa500 !important;
+    background: rgba(255, 165, 0, 0.05) !important;
+}
+
+.mitre-technique-warning:hover {
+    background: rgba(255, 165, 0, 0.1) !important;
+}
+
+/* Error (red) - Known technique in wrong tactic */
+.mitre-technique-error {
+    border-left-color: #f44336 !important;
+    background: rgba(244, 67, 54, 0.05) !important;
+}
+
+.mitre-technique-error:hover {
+    background: rgba(244, 67, 54, 0.1) !important;
+}
+
+/* Expand/collapse icon for techniques with subtechniques */
+.mitre-expand-icon {
+    display: inline-block;
+    margin-right: 8px;
+    font-size: 12px;
+    transition: transform 0.2s ease;
+    cursor: pointer;
+    user-select: none;
+}
+
+.mitre-technique-item.has-subtechniques {
+    cursor: pointer;
+}
+
+.mitre-technique-item.expanded {
+    z-index: 10;           /* Stack above other items when expanded */
+    margin-bottom: 24px;   /* Extra space below expanded items */
+    min-height: auto;      /* Allow height to grow with content */
+}
+
+.mitre-technique-item.expanded .mitre-expand-icon {
+    transform: rotate(90deg);
+}
+
+/* Subtechniques container */
+.mitre-subtechniques-container {
+    margin-top: 12px;
+    margin-bottom: 0;
+    padding-top: 12px;
+    padding-bottom: 0;
+    border-top: 1px dashed var(--background-modifier-border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;  /* Space between individual subtechniques */
+    width: 100%;
+}
+
+.mitre-subtechnique {
+    padding: 12px 12px 12px 24px !important;
+    min-height: 60px !important;  /* Reduced from 80px */
+    margin-left: 16px;
+    border-left: 2px solid var(--interactive-success) !important;
+    opacity: 0.9;
+    flex-shrink: 0;  /* Prevent compression */
+}
+
+.mitre-subtechnique .mitre-technique-id {
+    font-size: 11px;
+}
+
+/* Unfound techniques - Gray, subdued appearance */
+.mitre-technique-unfound {
+    border-left-color: var(--background-modifier-border) !important;
+    background: transparent !important;
+    opacity: 0.5;
+}
+
+.mitre-technique-unfound:hover {
+    background: var(--background-modifier-hover) !important;
+    opacity: 0.7;
+}
+
+.mitre-technique-unfound .mitre-technique-name {
+    color: var(--text-muted);
+}
+
+.mitre-technique-unfound .mitre-technique-id {
+    color: var(--text-muted);
+    background: var(--background-modifier-border);
+}
+
+.mitre-technique-unfound .mitre-technique-description {
+    color: var(--text-faint);
+}
+
+/* Technique info row */
+.mitre-technique-info {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.mitre-validation-icon {
+    font-size: 14px;
+    cursor: help;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+}
+
+.mitre-technique-id {
+    font-family: var(--font-monospace);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--interactive-accent);
+    background: var(--background-primary);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.mitre-technique-name {
     font-size: 13px;
     color: var(--text-normal);
-    font-family: var(--font-monospace);
-    word-break: break-all;
-    background: var(--background-primary-alt);
-    padding: 6px 10px;
-    border-radius: 4px;
+    flex: 1;
 }
 
-.dag-node-time,
-.dag-node-splunk,
-.dag-node-tactic,
-.dag-node-technique {
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.4;
-}
-
-/* SVG arrows styling */
-.dag-arrows-svg {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 0;
-}
-
-.dag-arrow {
-    transition: all 0.2s ease;
-}
-
-.dag-arrow:hover {
-    opacity: 1 !important;
-    stroke-width: 3;
-}
-
-/* Trunk line styling (shared source for multiple arrows) */
-.dag-arrow-trunk {
-    stroke: var(--interactive-accent);
-    stroke-width: 3;
-    opacity: 0.8;
-}
-
-/* Branch line styling (individual arrows from trunk) */
-.dag-arrow-branch {
-    stroke: var(--text-muted);
-    stroke-width: 2;
-    opacity: 0.6;
-}
-
-.dag-arrow-branch:hover {
-    stroke: var(--interactive-accent);
-    opacity: 0.9;
-}
-
-/* Section for isolated nodes */
-.dag-isolated-section {
-    margin-top: 60px;
-    padding-top: 30px;
-    border-top: 2px dashed var(--background-modifier-border);
-}
-
-.dag-isolated-header {
-    font-size: 16px;
+.mitre-technique-count-badge {
+    font-size: 10px;
     font-weight: 600;
     color: var(--text-muted);
-    margin-bottom: 20px;
-    text-align: center;
+    background: var(--background-primary);
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: auto;
 }
 
-.dag-isolated-nodes {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 30px;
-    justify-content: center;
+/* Technique description */
+.mitre-technique-description {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--background-modifier-border);
+    word-wrap: break-word;      /* Break long words */
+    overflow-wrap: break-word;  /* Modern browsers */
+    white-space: normal;        /* Allow wrapping */
+}
+
+/* Responsive: Force specific column counts at breakpoints */
+
+/* Desktop: 4 columns for very wide screens */
+@media (min-width: 1600px) {
+    .mitre-content-area {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* Tablet landscape: Force 3 columns */
+@media (max-width: 1400px) {
+    .mitre-content-area {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Tablet portrait: 2 columns, disable sticky headers */
+@media (max-width: 1024px) {
+    .mitre-content-area {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Disable sticky headers on tablet */
+    .mitre-tactic-header {
+        position: relative; /* Override sticky */
+    }
+}
+
+/* Mobile: Single vertical column */
+@media (max-width: 768px) {
+    .mitre-content-area {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        padding: 12px;
+    }
+
+    .mitre-modal-fullscreen {
+        width: 100vw;
+        height: 100vh;
+        max-width: 100vw;
+        border-radius: 0;
+    }
+
+    /* Disable sticky headers on mobile */
+    .mitre-tactic-header {
+        position: relative; /* Override sticky */
+    }
+
+    /* Disable sticky stats on mobile */
+    .mitre-stats {
+        flex-direction: column;
+        gap: 12px;
+        position: relative; /* Override sticky */
+    }
+
+    /* Compact spacing on mobile */
+    .mitre-tactic-column {
+        border-radius: 6px;
+    }
+
+    .mitre-technique-item {
+        padding: 12px;
+        min-height: 100px;
+    }
+
+    .mitre-technique-description {
+        font-size: 10px;
+    }
 }
 
 /* ==========================================================================
-   8. REDUCE VIEW - Compact single-line IOC cards showing only the value
+   MITRE MODAL RESIZE HANDLES
+   ========================================================================== */
+
+/* Base resize handle styling */
+.mitre-resize-handle {
+    position: absolute;
+    background: transparent;
+    transition: background-color 0.2s ease;
+    z-index: 1000; /* Above all modal content */
+}
+
+.mitre-resize-handle:hover {
+    background: var(--interactive-accent);
+    opacity: 0.6;
+}
+
+.mitre-modal-resizing .mitre-resize-handle {
+    background: var(--interactive-accent);
+    opacity: 0.8;
+}
+
+/* Edge handles: 8px thick bars */
+.resize-handle-n {
+    top: 0;
+    left: 10px;
+    right: 10px;
+    height: 8px;
+    cursor: ns-resize;
+}
+
+.resize-handle-s {
+    bottom: 0;
+    left: 10px;
+    right: 10px;
+    height: 8px;
+    cursor: ns-resize;
+}
+
+.resize-handle-e {
+    right: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 8px;
+    cursor: ew-resize;
+}
+
+.resize-handle-w {
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 8px;
+    cursor: ew-resize;
+}
+
+/* Corner handles: 16x16px squares */
+.resize-handle-ne {
+    top: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nesw-resize;
+}
+
+.resize-handle-nw {
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+}
+
+.resize-handle-se {
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+}
+
+.resize-handle-sw {
+    bottom: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nesw-resize;
+}
+
+/* Disable resize handles on mobile */
+@media (max-width: 768px) {
+    .mitre-resize-handle {
+        display: none;
+    }
+}
+
+/* ==========================================================================
+   7. REDUCE VIEW - Compact single-line IOC cards showing only the value
    ========================================================================== */
 
 /* When reduced, hide the HTML header block */

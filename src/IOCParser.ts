@@ -303,28 +303,48 @@ function extractSplunkQuery(text: string): string {
 /**
  * Extract the MITRE ATT&CK tactic from node text.
  *
- * RenderIOCCards.ts produces: **Mitre Tactic:** <tactic>
+ * Handles both formats:
+ *   - Plain text: Mitre Tactic: <tactic>
+ *   - Bold markdown: **Mitre Tactic:** <tactic>
  */
 function extractTactic(text: string): string {
-    const match = text.match(/\*\*Mitre Tactic:\*\*\s*([^\n]+)/i)
+    // Try plain text format first (current template format)
+    let match = text.match(/Mitre Tactic:\s*([^\n]+)/i);
+    if (match && match[1] && match[1].trim()) {
+        return match[1].trim();
+    }
+
+    // Fall back to bold markdown format (backwards compatibility)
+    match = text.match(/\*\*Mitre Tactic:\*\*\s*([^\n]+)/i)
         || text.match(/\*\*Mitre Tactic:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
     if (match && match[1]) {
         return match[1].trim();
     }
+
     return '';
 }
 
 /**
  * Extract the MITRE ATT&CK technique from node text.
  *
- * RenderIOCCards.ts produces: **Mitre Technique:** <technique>
+ * Handles both formats:
+ *   - Plain text: Mitre Technique: <technique>
+ *   - Bold markdown: **Mitre Technique:** <technique>
  */
 function extractTechnique(text: string): string {
-    const match = text.match(/\*\*Mitre Technique:\*\*\s*([^\n]+)/i)
+    // Try plain text format first (current template format)
+    let match = text.match(/Mitre Technique:\s*([^\n]+)/i);
+    if (match && match[1] && match[1].trim()) {
+        return match[1].trim();
+    }
+
+    // Fall back to bold markdown format (backwards compatibility)
+    match = text.match(/\*\*Mitre Technique:\*\*\s*([^\n]+)/i)
         || text.match(/\*\*Mitre Technique:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
     if (match && match[1]) {
         return match[1].trim();
     }
+
     return '';
 }
 

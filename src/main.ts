@@ -18,6 +18,7 @@
 
 import { Plugin, Notice, TFile, ItemView } from 'obsidian';
 import { RenderTimelinesModal } from './RenderTimelinesModal';
+import { RenderMitreModal } from './RenderMitreModal';
 import { RenderIOCCardsModal } from './RenderIOCCardsModal';
 import { RenderIOCCards } from './RenderIOCCards';
 import { IOC_TYPES } from './IOCCardsTypes';
@@ -225,9 +226,24 @@ export default class IOCCanvasPlugin extends Plugin {
             reduceIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
             reduceItem.appendChild(reduceIcon);
 
+            // --- MITRE ATT&CK Mapper button ---
+            const mitreItem = document.createElement('div');
+            mitreItem.className = 'canvas-control-item';
+            mitreItem.setAttribute('aria-label', 'MITRE ATT&CK Mapper');
+            mitreItem.setAttribute('title', 'MITRE ATT&CK Mapper');
+            mitreItem.addEventListener('click', () => {
+                new RenderMitreModal(this.app, this).open();
+            });
+            const mitreIcon = document.createElement('div');
+            mitreIcon.className = 'clickable-icon';
+            // Target/crosshair SVG icon for MITRE
+            mitreIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>';
+            mitreItem.appendChild(mitreIcon);
+
             iocToolbar.appendChild(timelineItem);
             iocToolbar.appendChild(cardsItem);
             iocToolbar.appendChild(reduceItem);
+            iocToolbar.appendChild(mitreItem);
             canvasControls.appendChild(iocToolbar);
         } catch (err) {
             // Button injection is non-critical; log and continue

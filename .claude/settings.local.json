@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(node -e:*)",
+      "Bash(npm run parse-mitre:*)",
+      "Bash(cd:*)",
+      "Bash(wc:*)"
     ]
   }
 }
