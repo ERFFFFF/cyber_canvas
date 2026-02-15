@@ -644,8 +644,8 @@
     border-left: 4px solid var(--interactive-success);
     position: relative;
     z-index: 0;
-    overflow: hidden;  /* Clip overflow in collapsed state */
-    width: 100%;       /* Force full width within column */
+    overflow: visible;  /* Allow count badge and tooltip to render outside bounds */
+    width: 100%;        /* Force full width within column */
     display: flex;
     flex-direction: column;
     margin-bottom: 12px;  /* Space between techniques */

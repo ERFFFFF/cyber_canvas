@@ -118,16 +118,28 @@ export class RenderMitreModal extends Modal {
      * @param parentEl - Parent element to attach the badge to
      * @param technique - Technique object with count and iocCards array
      */
-    private createCountBadgeWithTooltip(parentEl: HTMLElement, technique: MitreTechnique): void {
+    /**
+     * @param parentEl - Element to attach the badge div to
+     * @param technique - Technique with count/iocCards
+     * @param extraIocCards - Additional card IDs to show (e.g., from found subtechniques)
+     */
+    private createCountBadgeWithTooltip(
+        parentEl: HTMLElement,
+        technique: MitreTechnique,
+        extraIocCards?: string[]
+    ): void {
         const badge = parentEl.createDiv('mitre-technique-count-badge');
         badge.textContent = `${technique.count} card${technique.count > 1 ? 's' : ''}`;
+
+        // Merge technique's own iocCards with any extra cards from subtechniques
+        const allCardIds = [...technique.iocCards, ...(extraIocCards || [])];
 
         // Create tooltip element (hidden by default)
         const tooltip = badge.createDiv('mitre-count-tooltip');
         tooltip.style.display = 'none';
 
         // Populate tooltip with card details
-        technique.iocCards.forEach((cardId, index) => {
+        allCardIds.forEach((cardId, index) => {
             const iocData = this.iocDataMap.get(cardId);
             if (!iocData) return;
 
@@ -160,23 +172,22 @@ export class RenderMitreModal extends Modal {
             }
 
             // Add separator between cards (except last)
-            if (index < technique.iocCards.length - 1) {
+            if (index < allCardIds.length - 1) {
                 cardItem.style.borderBottom = '1px solid var(--background-modifier-border)';
                 cardItem.style.paddingBottom = '8px';
                 cardItem.style.marginBottom = '8px';
             }
         });
 
-        // Hover event listeners
+        // Hover event listeners - always on the badge itself
         badge.addEventListener('mouseenter', () => {
             tooltip.style.display = 'block';
         });
-
         badge.addEventListener('mouseleave', () => {
             tooltip.style.display = 'none';
         });
 
-        console.debug('[MitreModal]   → Count badge with tooltip:', technique.count, 'card(s)');
+        console.debug('[MitreModal]   → Count badge with tooltip:', technique.count, 'card(s), allCards:', allCardIds.length);
     }
 
     /**
@@ -1504,7 +1515,15 @@ export class RenderMitreModal extends Modal {
 
             // Show count badge ONLY for found techniques
             if (technique.isFound) {
-                this.createCountBadgeWithTooltip(techItem, technique);
+                // For parent techniques, collect iocCards from found subtechniques
+                // so the tooltip shows all card values (not just direct references)
+                const subtechCards: string[] = [];
+                subtechniques.forEach(sub => {
+                    if (sub.isFound && sub.iocCards.length > 0) {
+                        subtechCards.push(...sub.iocCards);
+                    }
+                });
+                this.createCountBadgeWithTooltip(techItem, technique, subtechCards);
             }
         });
 

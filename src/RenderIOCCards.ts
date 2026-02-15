@@ -62,10 +62,10 @@ export class RenderIOCCards {
         // "Time of Event" is pre-filled with the creation timestamp; the rest
         // are left blank for the analyst.
         // Delimiters ensure reliable value extraction even with multi-line content.
-        content += `Time of Event: ${timestamp}\n\n------------\n`;
-        content += `Splunk Query: \n\n------------\n`;
-        content += `Mitre Tactic: \n\n------------\n`;
-        content += `Mitre Technique: \n\n------------\n`;
+        content += `Time of Event: ${timestamp}\n\n\n------------\n`;
+        content += `Splunk Query: \n\n\n------------\n`;
+        content += `Mitre Tactic: \n\n\n------------\n`;
+        content += `Mitre Technique: \n\n\n------------\n`;
 
         return content;
     }
