@@ -47,7 +47,7 @@ const TACTIC_ABBREVIATIONS: Record<string, string[]> = {
     'Lateral Movement': ['LATERAL', 'LM', 'LAT MOVE'],
     'Collection': ['COLLECT', 'COL', 'CO'],
     'Command and Control': ['C2', 'CNC', 'CC'],
-    'Exfiltration': ['EXFIL', 'EXFILTRATE', 'EX'],
+    'Exfiltration': ['EXFIL', 'EXFILTRATE'],
     'Impact': ['IMP', 'IM']
 };
 

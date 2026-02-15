@@ -236,21 +236,28 @@ function extractSplunkQuery(text: string): string {
  * @returns Normalized tactic value in UPPERCASE for consistent matching
  */
 function extractTactic(text: string): string {
+    console.debug('[IOCParser] Extracting tactic...');
+
     // Try plain text format first (current template format)
     // Use [ \t]* to match spaces/tabs but NOT newlines
     // Use [^\n]* (not +) to allow capturing empty values
     let match = text.match(/Mitre Tactic:[ \t]*([^\n]*)/i);
     if (match && match[1] && match[1].trim()) {
-        return match[1].trim().toUpperCase();
+        const tactic = match[1].trim().toUpperCase();
+        console.debug('[IOCParser] ✓ Found tactic (plain):', tactic);
+        return tactic;
     }
 
     // Fall back to bold markdown format (backwards compatibility)
     match = text.match(/\*\*Mitre Tactic:\*\*[ \t]*([^\n]*)/i)
         || text.match(/\*\*Mitre Tactic:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
     if (match && match[1] && match[1].trim()) {
-        return match[1].trim().toUpperCase();
+        const tactic = match[1].trim().toUpperCase();
+        console.debug('[IOCParser] ✓ Found tactic (bold):', tactic);
+        return tactic;
     }
 
+    console.debug('[IOCParser] ⚠ No tactic found');
     return '';
 }
 
@@ -267,21 +274,28 @@ function extractTactic(text: string): string {
  * @returns Normalized technique value in UPPERCASE for consistent matching
  */
 function extractTechnique(text: string): string {
+    console.debug('[IOCParser] Extracting technique...');
+
     // Try plain text format first (current template format)
     // Use [ \t]* to match spaces/tabs but NOT newlines
     // Use [^\n]* (not +) to allow capturing empty values
     let match = text.match(/Mitre Technique:[ \t]*([^\n]*)/i);
     if (match && match[1] && match[1].trim()) {
-        return match[1].trim().toUpperCase();
+        const technique = match[1].trim().toUpperCase();
+        console.debug('[IOCParser] ✓ Found technique (plain):', technique);
+        return technique;
     }
 
     // Fall back to bold markdown format (backwards compatibility)
     match = text.match(/\*\*Mitre Technique:\*\*[ \t]*([^\n]*)/i)
         || text.match(/\*\*Mitre Technique:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
     if (match && match[1] && match[1].trim()) {
-        return match[1].trim().toUpperCase();
+        const technique = match[1].trim().toUpperCase();
+        console.debug('[IOCParser] ✓ Found technique (bold):', technique);
+        return technique;
     }
 
+    console.debug('[IOCParser] ⚠ No technique found');
     return '';
 }
 
@@ -355,17 +369,22 @@ function lookupTypeVisuals(iocType: string, fallbackColor: string): { icon: stri
  *          text does not match any known IOC type
  */
 export function parseIOCNode(node: any): IOCNodeData | null {
-    console.debug('[IOCParser] parseIOCNode - node:', node.id);
+    console.debug('[IOCParser] ==================== PARSING NODE ====================');
+    console.debug('[IOCParser] Node ID:', node.id);
+    console.debug('[IOCParser] Text length:', node.text?.length || 0);
 
     if (!node.text) {
+        console.debug('[IOCParser] ❌ No text content');
         return null;
     }
 
     // Step 1: Detect IOC type
     const iocType = detectIOCType(node.text);
     if (!iocType) {
+        console.debug('[IOCParser] ❌ No IOC type detected');
         return null;
     }
+    console.debug('[IOCParser] ✓ IOC Type:', iocType);
 
     // Step 2: Extract field values
     const value = extractValue(node.text);
@@ -392,6 +411,14 @@ export function parseIOCNode(node: any): IOCNodeData | null {
         color
     };
 
-    console.debug('[IOCParser] parseIOCNode - result:', iocType, 'value:', value || '(empty)');
+    console.debug('[IOCParser] ✓ EXTRACTION COMPLETE:', {
+        type: iocType,
+        cardId: cardId || '(no ID)',
+        value: value || '(empty)',
+        time: time || '(empty)',
+        tactic: tactic || '(empty)',
+        technique: technique || '(empty)'
+    });
+    console.debug('[IOCParser] =========================================================');
     return result;
 }

@@ -675,6 +675,21 @@
     background: rgba(244, 67, 54, 0.1) !important;
 }
 
+/* Active technique - found in IOC cards (PURPLE) */
+.mitre-technique-valid {
+    border-left-color: #9C27B0 !important;  /* Purple border */
+    background: rgba(156, 39, 176, 0.08) !important;  /* Light purple background */
+}
+
+.mitre-technique-valid:hover {
+    background: rgba(156, 39, 176, 0.15) !important;  /* Darker purple on hover */
+}
+
+.mitre-technique-valid .mitre-technique-count-badge {
+    background: rgba(156, 39, 176, 0.2);
+    border: 1px solid #9C27B0;
+}
+
 /* Expand/collapse icon for techniques with subtechniques */
 .mitre-expand-icon {
     display: inline-block;
@@ -707,6 +722,7 @@
     flex-direction: column;
     gap: 12px;  /* Space between individual subtechniques */
     width: 100%;
+    background: var(--background-primary);  /* Opaque background prevents parent's purple from bleeding through to unfound subtechniques */
 }
 
 .mitre-subtechnique {
@@ -770,6 +786,43 @@
     color: var(--text-faint);
 }
 
+/* ===================================================================
+   Active technique highlighting (purple) - from selected canvas card
+   =================================================================== */
+
+/* Purple border and background for active selection */
+.mitre-technique-active {
+    border-left-color: #9c27b0 !important;
+    background: rgba(156, 39, 176, 0.1) !important;
+    z-index: 15 !important;
+}
+
+.mitre-technique-active:hover {
+    background: rgba(156, 39, 176, 0.15) !important;
+}
+
+/* Active overrides validation colors (purple takes precedence) */
+.mitre-technique-active.mitre-technique-error,
+.mitre-technique-active.mitre-technique-warning {
+    border-left-color: #9c27b0 !important;
+    background: rgba(156, 39, 176, 0.1) !important;
+}
+
+.mitre-technique-active.mitre-technique-error:hover,
+.mitre-technique-active.mitre-technique-warning:hover {
+    background: rgba(156, 39, 176, 0.15) !important;
+}
+
+/* Subtechniques with active highlighting */
+.mitre-subtechnique.mitre-technique-active {
+    border-left-color: #9c27b0 !important;
+    background: rgba(156, 39, 176, 0.12) !important;
+}
+
+.mitre-subtechnique.mitre-technique-active:hover {
+    background: rgba(156, 39, 176, 0.18) !important;
+}
+
 /* Technique info row */
 .mitre-technique-info {
     display: flex;
@@ -810,6 +863,49 @@
     padding: 2px 6px;
     border-radius: 10px;
     margin-left: auto;
+    position: relative;
+    cursor: help;
+}
+
+/* Count badge hover tooltip */
+.mitre-count-tooltip {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    margin-bottom: 8px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 8px;
+    min-width: 250px;
+    max-width: 350px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.mitre-tooltip-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mitre-tooltip-type {
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.mitre-tooltip-value {
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: 11px;
+    word-break: break-all;
+}
+
+.mitre-tooltip-fields {
+    color: var(--text-muted);
+    font-size: 10px;
 }
 
 /* Technique description */

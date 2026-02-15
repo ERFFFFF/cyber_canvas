@@ -416,7 +416,7 @@ MIT License - see LICENSE file for details
 
 ## Known issues
 
-- Mitre modal do not mobile technique.
+- Mitre modal do not have mobile technique.
 - Display in the tactic title the number of techniques beeing present
 - Display the active techniques at the toip of the tactic
 - The current active card technique and subtechnique should be highlighted in purple.

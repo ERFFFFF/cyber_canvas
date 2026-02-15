@@ -177,17 +177,17 @@ The plugin includes comprehensive MITRE ATT&CK framework integration for threat 
   - Reconnaissance: RECON, RECCE, R
   - Resource Development: RESOURCE, RES, RD
   - Initial Access: IA, INIT
-  - Execution: EXEC, EXE, EX, E
-  - Persistence: PERSIST, PERS, P
+  - Execution: EXEC, EXE, EX
+  - Persistence: PERSIST, PERS, PS
   - Privilege Escalation: PRIV, PE, PRIVESC, PRIV ESC
   - Defense Evasion: DEFENSE, DEF, DE
   - Credential Access: CRED, CA, CRED ACCESS
-  - Discovery: DISC, DIS, D
+  - Discovery: DISC, DIS, DI
   - Lateral Movement: LATERAL, LM, LAT MOVE
-  - Collection: COLLECT, COL, C
+  - Collection: COLLECT, COL, CO
   - Command and Control: C2, CNC, CC
-  - Exfiltration: EXFIL, EXFILTRATE, E
-  - Impact: IMP, I
+  - Exfiltration: EXFIL, EXFILTRATE
+  - Impact: IMP, IM
 
 ## Build Config
 

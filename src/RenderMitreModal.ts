@@ -70,6 +70,8 @@ export class RenderMitreModal extends Modal {
     private searchClearButton: HTMLElement | null = null;
     private searchMatchCount: HTMLElement | null = null;
     private validationErrors: ValidationError[] = [];
+    private activeTechniqueId: string | null = null; // Active technique from selected card
+    private iocDataMap: Map<string, IOCNodeData> = new Map(); // Store IOC data for hover tooltips
 
     // Truncation limits
     private readonly TECHNIQUE_TRUNCATE_LIMIT = 180;
@@ -95,17 +97,119 @@ export class RenderMitreModal extends Modal {
      * Apply the appropriate CSS validation class based on severity.
      */
     private applySeverityClass(element: HTMLElement, severity: string): void {
-        if (this.isCriticalSeverity(severity)) {
+        if (severity === 'valid') {
+            element.addClass('mitre-technique-valid');  // Green for valid technique-tactic pairing
+        } else if (this.isCriticalSeverity(severity)) {
             element.addClass('mitre-technique-error');
         } else if (severity === 'mismatch') {
             element.addClass('mitre-technique-warning');
         }
     }
 
-    constructor(app: App, plugin: any) {
+    /**
+     * Create a count badge with hover tooltip showing card details.
+     *
+     * When hovering over the count badge, displays a tooltip with information
+     * about the IOC cards that reference this technique, including:
+     * - Card type (with icon color)
+     * - Card value/identifier
+     * - Tactic and technique specified in the card
+     *
+     * @param parentEl - Parent element to attach the badge to
+     * @param technique - Technique object with count and iocCards array
+     */
+    private createCountBadgeWithTooltip(parentEl: HTMLElement, technique: MitreTechnique): void {
+        const badge = parentEl.createDiv('mitre-technique-count-badge');
+        badge.textContent = `${technique.count} card${technique.count > 1 ? 's' : ''}`;
+
+        // Create tooltip element (hidden by default)
+        const tooltip = badge.createDiv('mitre-count-tooltip');
+        tooltip.style.display = 'none';
+
+        // Populate tooltip with card details
+        technique.iocCards.forEach((cardId, index) => {
+            const iocData = this.iocDataMap.get(cardId);
+            if (!iocData) return;
+
+            const cardItem = tooltip.createDiv('mitre-tooltip-card');
+
+            // Card type with icon color
+            const iocType = Object.values(IOC_TYPES).find(t => t.name === iocData.type);
+            const typeColor = iocType?.color || '#888';
+            const typeEl = cardItem.createDiv('mitre-tooltip-type');
+            typeEl.style.color = typeColor;
+            typeEl.style.fontWeight = 'bold';
+            typeEl.textContent = iocData.type;
+
+            // Card value/identifier
+            if (iocData.value) {
+                const valueEl = cardItem.createDiv('mitre-tooltip-value');
+                valueEl.textContent = iocData.value;
+            }
+
+            // MITRE fields
+            if (iocData.mitreTactic || iocData.mitreTechnique) {
+                const mitreEl = cardItem.createDiv('mitre-tooltip-fields');
+                if (iocData.mitreTactic) {
+                    mitreEl.createSpan({ text: `Tactic: ${iocData.mitreTactic}` });
+                }
+                if (iocData.mitreTechnique) {
+                    if (iocData.mitreTactic) mitreEl.createSpan({ text: ' | ' });
+                    mitreEl.createSpan({ text: `Technique: ${iocData.mitreTechnique}` });
+                }
+            }
+
+            // Add separator between cards (except last)
+            if (index < technique.iocCards.length - 1) {
+                cardItem.style.borderBottom = '1px solid var(--background-modifier-border)';
+                cardItem.style.paddingBottom = '8px';
+                cardItem.style.marginBottom = '8px';
+            }
+        });
+
+        // Hover event listeners
+        badge.addEventListener('mouseenter', () => {
+            tooltip.style.display = 'block';
+        });
+
+        badge.addEventListener('mouseleave', () => {
+            tooltip.style.display = 'none';
+        });
+
+        console.debug('[MitreModal]   → Count badge with tooltip:', technique.count, 'card(s)');
+    }
+
+    /**
+     * Check if a technique should be highlighted as the active selection.
+     * Handles both direct matches and parent-child relationships.
+     *
+     * When a subtechnique is selected (e.g., T1566.001), both the subtechnique
+     * AND its parent (T1566) should be highlighted in purple.
+     *
+     * @param techniqueId - The technique ID to check (e.g., "T1566" or "T1566.001")
+     * @returns true if this technique should be highlighted in purple
+     */
+    private isActiveTechnique(techniqueId: string): boolean {
+        if (!this.activeTechniqueId) return false;
+
+        // Direct match: selected technique is this technique
+        if (techniqueId === this.activeTechniqueId) return true;
+
+        // Parent match: selected technique is a subtechnique of this technique
+        // e.g., activeTechniqueId = "T1566.001", techniqueId = "T1566" -> highlight parent
+        if (this.activeTechniqueId.includes('.')) {
+            const parentId = this.activeTechniqueId.split('.')[0];
+            if (techniqueId === parentId) return true;
+        }
+
+        return false;
+    }
+
+    constructor(app: App, plugin: any, activeTechniqueId?: string | null) {
         super(app);
         this.plugin = plugin;
         this.timeProcessor = new TimeTimelineProcessor(app, plugin, IOC_TYPES);
+        this.activeTechniqueId = activeTechniqueId || null;
         this.loadDataset();
     }
 
@@ -439,10 +543,23 @@ export class RenderMitreModal extends Modal {
         // Render validation errors section if any exist
         this.renderValidationErrors(container);
 
+        console.debug('[MitreModal] ╔════════════════════════════════════════════════════════════╗');
+        console.debug('[MitreModal] ║          RENDERING MITRE MATRIX                            ║');
+        console.debug('[MitreModal] ╚════════════════════════════════════════════════════════════╝');
+
         // Render tactics as columns
         tactics.forEach(tactic => {
             this.renderTacticSection(container, tactic, this.currentSearchState);
         });
+
+        console.debug('[MitreModal] ╔════════════════════════════════════════════════════════════╗');
+        console.debug('[MitreModal] ║          MATRIX RENDERING COMPLETE                         ║');
+        console.debug('[MitreModal] ╚════════════════════════════════════════════════════════════╝');
+        console.debug('[MitreModal] Summary:');
+        console.debug('[MitreModal]   - Total tactics:', tactics.length);
+        console.debug('[MitreModal]   - Total techniques:', totalTechniques);
+        console.debug('[MitreModal]   - Found techniques:', foundTechniques);
+        console.debug('[MitreModal]   - Coverage:', coveragePercent + '%');
     }
 
     /**
@@ -631,6 +748,66 @@ export class RenderMitreModal extends Modal {
     }
 
     /**
+     * Mark parent technique as found when a subtechnique is referenced.
+     *
+     * When an analyst specifies a subtechnique like T1053.005 in an IOC card,
+     * both the subtechnique AND its parent technique (T1053) should be highlighted
+     * in the MITRE matrix. This helper ensures the parent is also tracked in the
+     * foundTechniques map.
+     *
+     * The parent inherits the count from its subtechniques but does NOT include
+     * the IOC card IDs directly (since the card referenced the subtechnique, not
+     * the parent). This allows the parent to show a count badge while keeping
+     * accurate card tracking at the subtechnique level.
+     *
+     * @param techniqueId - The technique ID that was found (may be subtechnique)
+     * @param foundTechniques - The map tracking all found techniques
+     * @param tactic - The user-provided tactic string
+     */
+    private markParentAsFound(
+        techniqueId: string,
+        foundTechniques: Map<string, {
+            count: number;
+            iocCards: string[];
+            severity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic';
+            validationMessage?: string;
+            userProvidedTactic: string;
+        }>,
+        tactic: string
+    ): void {
+        // Check if this is a subtechnique (contains a dot)
+        if (!techniqueId.includes('.')) return;
+
+        // Extract parent ID (e.g., T1053.005 -> T1053)
+        const parentId = techniqueId.split('.')[0];
+
+        // Mark parent as found if not already tracked
+        if (foundTechniques.has(parentId)) {
+            const existing = foundTechniques.get(parentId)!;
+            existing.count++;
+            // Note: We don't add to iocCards array since the card specifically
+            // referenced the subtechnique, not the parent. The count still increments
+            // to show activity level.
+        } else {
+            // Create new entry for parent with 'valid' severity
+            // We assume valid since the subtechnique exists and passed validation
+            foundTechniques.set(parentId, {
+                count: 1,
+                iocCards: [],  // Empty - cards reference subtechniques, not parent
+                severity: 'valid',
+                validationMessage: undefined,
+                userProvidedTactic: tactic
+            });
+        }
+
+        console.debug('[MitreModal] Marked parent technique as found:', {
+            subtechnique: techniqueId,
+            parent: parentId,
+            tactic: tactic
+        });
+    }
+
+    /**
      * Aggregate MITRE tactics and techniques from IOC cards into full matrix structure.
      *
      * This is the core aggregation algorithm that builds the complete MITRE ATT&CK matrix
@@ -661,6 +838,12 @@ export class RenderMitreModal extends Modal {
 
         console.log('[MitreModal] Starting full matrix aggregation with', iocData.length, 'IOC cards');
         console.log('[MitreModal] Dataset has', Object.keys(this.mitreDataset!.techniques).length, 'techniques');
+
+        // Store IOC data in map for hover tooltips
+        this.iocDataMap.clear();
+        iocData.forEach(ioc => {
+            this.iocDataMap.set(ioc.id, ioc);
+        });
 
         // ---------------------------------------------------------------
         // STEP 1: Build map of found techniques from IOC cards
@@ -698,6 +881,15 @@ export class RenderMitreModal extends Modal {
             // Explicitly trim and convert falsy values to empty string
             const rawTactic = (ioc.tactic || '').trim();
             const rawTechnique = (ioc.technique || '').trim();
+
+            // DEBUG: Log every IOC card being processed
+            console.debug('[MitreModal] Processing IOC card:', {
+                cardId: ioc.cardId || '(no ID)',
+                type: ioc.type,
+                nodeId: ioc.id,
+                rawTactic: rawTactic || '(empty)',
+                rawTechnique: rawTechnique || '(empty)'
+            });
 
             // ---------------------------------------------------------------
             // VALIDATION CASE 1: Empty technique - always skip
@@ -783,6 +975,10 @@ export class RenderMitreModal extends Modal {
                         userProvidedTactic: '(empty)'
                     });
                 }
+
+                // If subtechnique, also mark parent as found
+                this.markParentAsFound(techniqueId, foundTechniques, '(empty)');
+
                 return;
             }
 
@@ -803,10 +999,14 @@ export class RenderMitreModal extends Modal {
             // Validate technique-tactic mapping using MitreLoader
             const validation = validateTechniqueTactic(techniqueId, tactic, this.mitreDataset!);
 
-            console.debug('[MitreModal] Found technique:', {
+            console.debug('[MitreModal] Validated technique:', {
+                cardId: ioc.cardId || ioc.id,
+                type: ioc.type,
                 techniqueId,
+                techniqueName,
                 tactic,
-                severity: validation.severity
+                severity: validation.severity,
+                message: validation.message || 'valid'
             });
 
             // NEW: Always store individual card validation
@@ -840,6 +1040,9 @@ export class RenderMitreModal extends Modal {
                     userProvidedTactic: tactic
                 });
             }
+
+            // If subtechnique, also mark parent as found
+            this.markParentAsFound(techniqueId, foundTechniques, tactic);
         });
 
         console.log('[MitreModal] Found', foundTechniques.size, 'unique techniques in IOC cards');
@@ -909,6 +1112,15 @@ export class RenderMitreModal extends Modal {
                     techniqueObj.tacticId = techData.tactics[0];
                 }
                 this.subtechniquesMap.get(techData.parent)!.push(techniqueObj);
+
+                // Debug: Log subtechnique addition
+                console.debug('[MitreModal] Added subtechnique:', {
+                    id: techData.id,
+                    parent: techData.parent,
+                    isFound: isFound,
+                    totalSubtechniques: this.subtechniquesMap.get(techData.parent)!.length
+                });
+
                 return; // Skip adding to main tactic list
             }
 
@@ -927,6 +1139,13 @@ export class RenderMitreModal extends Modal {
                     tacticId: tacticId
                 });
             });
+        });
+
+        // Debug: Log subtechniques summary
+        console.log('[MitreModal] Subtechniques aggregation complete:');
+        this.subtechniquesMap.forEach((subs, parentId) => {
+            const foundCount = subs.filter(s => s.isFound).length;
+            console.log(`  ${parentId}: ${subs.length} total (${foundCount} found, ${subs.length - foundCount} unfound)`);
         });
 
         // ---------------------------------------------------------------
@@ -1130,22 +1349,38 @@ export class RenderMitreModal extends Modal {
         tactic: MitreTactic,
         searchState?: SearchState | null
     ): void {
+        console.debug('[MitreModal] ========== RENDERING TACTIC SECTION ==========');
+        console.debug('[MitreModal] Tactic:', tactic.displayName || tactic.name);
+        console.debug('[MitreModal] Total techniques:', tactic.techniques.length);
+
         const tacticColumn = container.createDiv('mitre-tactic-column');
 
         // Show found vs total count
         const foundCount = tactic.techniques.filter(t => t.isFound).length;
         const totalCount = tactic.techniques.length;
 
+        console.debug('[MitreModal] Found techniques:', foundCount, '/', totalCount);
+
         const tacticHeader = tacticColumn.createDiv('mitre-tactic-header');
         tacticHeader.createEl('h3', { text: `⚔️ ${tactic.displayName || tactic.name}` });
         tacticHeader.createEl('span', {
-            text: `${foundCount}/${totalCount} techniques covered`,
+            text: `${foundCount} active / ${totalCount} total techniques`,
             cls: 'mitre-technique-count'
         });
 
         const techniqueList = tacticColumn.createDiv('mitre-technique-list');
 
-        tactic.techniques.forEach(technique => {
+        tactic.techniques.forEach((technique, index) => {
+            // DEBUG: Log each technique being rendered
+            console.debug('[MitreModal] Rendering technique', index + 1, ':', {
+                id: technique.id,
+                name: technique.name,
+                isFound: technique.isFound,
+                severity: technique.severity,
+                count: technique.count,
+                iocCards: technique.iocCards.length
+            });
+
             const techItem = techniqueList.createDiv('mitre-technique-item');
 
             // Check if this technique has subtechniques
@@ -1169,13 +1404,30 @@ export class RenderMitreModal extends Modal {
                 techItem.setAttribute('data-truncated-description', truncated);
             }
 
+            // Check if this is the active technique (from selected card)
+            const isActive = this.isActiveTechnique(technique.id);
+            if (isActive) {
+                console.debug('[MitreModal]   ✓ Marking as ACTIVE (purple)');
+                techItem.addClass('mitre-technique-active'); // Purple highlighting
+            }
+
             // Apply styling based on isFound and severity
             if (!technique.isFound) {
+                console.debug('[MitreModal]   → Styling: UNFOUND (gray)');
                 techItem.addClass('mitre-technique-unfound'); // Gray, no validation
             } else {
+                console.debug('[MitreModal]   → Styling: FOUND with severity:', technique.severity);
                 // Apply validation styling for found techniques
                 this.applySeverityClass(techItem, technique.severity);
-                // else: valid techniques get default green styling
+
+                // Log which CSS class was applied
+                if (technique.severity === 'valid') {
+                    console.debug('[MitreModal]   → CSS class: mitre-technique-valid (PURPLE)');
+                } else if (this.isCriticalSeverity(technique.severity)) {
+                    console.debug('[MitreModal]   → CSS class: mitre-technique-error (RED)');
+                } else if (technique.severity === 'mismatch') {
+                    console.debug('[MitreModal]   → CSS class: mitre-technique-warning (ORANGE)');
+                }
             }
 
             const techInfo = techItem.createDiv('mitre-technique-info');
@@ -1252,10 +1504,11 @@ export class RenderMitreModal extends Modal {
 
             // Show count badge ONLY for found techniques
             if (technique.isFound) {
-                const techCount = techItem.createDiv('mitre-technique-count-badge');
-                techCount.textContent = `${technique.count} card${technique.count > 1 ? 's' : ''}`;
+                this.createCountBadgeWithTooltip(techItem, technique);
             }
         });
+
+        console.debug('[MitreModal] ========== TACTIC RENDERING COMPLETE ==========');
     }
 
     private renderSubtechniques(
@@ -1278,6 +1531,12 @@ export class RenderMitreModal extends Modal {
             if (isLongDescription) {
                 const truncated = this.truncateDescription(cleanedDesc, this.SUBTECHNIQUE_TRUNCATE_LIMIT);
                 subItem.setAttribute('data-truncated-description', truncated);
+            }
+
+            // Check if this subtechnique is active
+            const isActive = this.isActiveTechnique(subtech.id);
+            if (isActive) {
+                subItem.addClass('mitre-technique-active');
             }
 
             // Apply styling based on isFound and severity
@@ -1355,8 +1614,7 @@ export class RenderMitreModal extends Modal {
 
             // Show count badge for found subtechniques
             if (subtech.isFound) {
-                const subCount = subItem.createDiv('mitre-technique-count-badge');
-                subCount.textContent = `${subtech.count} card${subtech.count > 1 ? 's' : ''}`;
+                this.createCountBadgeWithTooltip(subItem, subtech);
             }
         });
     }

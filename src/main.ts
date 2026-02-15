@@ -23,6 +23,9 @@ import { RenderIOCCardsModal } from './RenderIOCCardsModal';
 import { RenderIOCCards } from './RenderIOCCards';
 import { IOC_TYPES } from './IOCCardsTypes';
 import { PluginSettings, IOCCanvasPluginSettings, DEFAULT_SETTINGS } from './PluginSettings';
+import { parseIOCNode } from './IOCParser';
+import { runDiagnostics } from './DiagnosticTests';
+import { loadMitreDataset } from './MitreLoader';
 
 export default class IOCCanvasPlugin extends Plugin {
     /** Typed settings object persisted to data.json. */
@@ -72,6 +75,17 @@ export default class IOCCanvasPlugin extends Plugin {
             name: 'Show All IOC Cards',
             callback: () => {
                 this.openIOCCardSelector();
+            }
+        });
+
+        this.addCommand({
+            id: 'run-diagnostics',
+            name: 'Run Diagnostic Tests',
+            callback: async () => {
+                new Notice('Running diagnostic tests... Check console for results.');
+                const dataset = await loadMitreDataset(this.app);
+                runDiagnostics(dataset);
+                new Notice('Diagnostic tests complete. Check console (Ctrl+Shift+I).');
             }
         });
 
@@ -200,7 +214,10 @@ export default class IOCCanvasPlugin extends Plugin {
             });
 
             const mitreBtn = this.createToolbarButton('MITRE ATT&CK Mapper', MITRE_SVG,
-                () => new RenderMitreModal(this.app, this).open());
+                () => {
+                    const activeTechniqueId = this.getSelectedTechniqueId();
+                    new RenderMitreModal(this.app, this, activeTechniqueId).open();
+                });
 
             iocToolbar.appendChild(timelineBtn);
             iocToolbar.appendChild(cardsBtn);
@@ -229,6 +246,81 @@ export default class IOCCanvasPlugin extends Plugin {
         item.appendChild(icon);
 
         return item;
+    }
+
+    /**
+     * Extract MITRE technique ID from the currently selected canvas node.
+     *
+     * Tries multiple approaches to detect canvas selection since the API is internal:
+     * 1. canvas.selection (likely a Set)
+     * 2. canvas.selectedNodes (array or Set)
+     * 3. Iterate nodes and check node.selected flag
+     *
+     * @returns Technique ID (e.g., "T1566.001") or null if no selection or no technique
+     */
+    private getSelectedTechniqueId(): string | null {
+        try {
+            const activeView = this.app.workspace.getActiveViewOfType(ItemView);
+            if (!activeView || activeView.getViewType() !== 'canvas') {
+                return null;
+            }
+
+            const canvas = (activeView as any).canvas;
+            if (!canvas) {
+                return null;
+            }
+
+            // Try multiple approaches to find selected node
+            let selectedNode: any = null;
+
+            // Approach 1: canvas.selection (likely a Set)
+            if (canvas.selection && canvas.selection.size > 0) {
+                const firstSelectedId = Array.from(canvas.selection)[0];
+                selectedNode = canvas.nodes.get(firstSelectedId);
+            }
+
+            // Approach 2: canvas.selectedNodes
+            if (!selectedNode && canvas.selectedNodes) {
+                if (Array.isArray(canvas.selectedNodes) && canvas.selectedNodes.length > 0) {
+                    selectedNode = canvas.selectedNodes[0];
+                } else if (canvas.selectedNodes.size > 0) {
+                    selectedNode = Array.from(canvas.selectedNodes)[0];
+                }
+            }
+
+            // Approach 3: Iterate nodes and check selected flag
+            if (!selectedNode && canvas.nodes) {
+                canvas.nodes.forEach((node: any) => {
+                    if (node.selected || node.isSelected) {
+                        selectedNode = node;
+                        return;
+                    }
+                });
+            }
+
+            if (!selectedNode || !selectedNode.text) {
+                return null;
+            }
+
+            // Parse IOC card using existing parser
+            const parsedData = parseIOCNode(selectedNode);
+            if (!parsedData || !parsedData.technique || !parsedData.technique.trim()) {
+                return null;
+            }
+
+            // Extract technique ID (same logic as RenderMitreModal.extractTechniqueId)
+            const technique = parsedData.technique.toUpperCase();
+            const idMatch = technique.match(/T\d{4}(?:\.\d{3})?/i);
+            if (idMatch) {
+                return idMatch[0].toUpperCase();
+            }
+
+            return null;
+
+        } catch (err) {
+            console.error('[IOC Canvas] Error getting selected technique:', err);
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------
