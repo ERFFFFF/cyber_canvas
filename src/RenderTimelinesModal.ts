@@ -41,16 +41,14 @@ export class RenderTimelinesModal extends Modal {
      * DEBUG: Console logs show timeline data for troubleshooting.
      */
     private renderEnhancedTimeTimeline(container: HTMLElement): void {
-        console.log('[TimeTimeline] renderEnhancedTimeTimeline - Starting render');
+        console.debug('[TimeTimeline] Starting render');
 
         // Extract IOC data from canvas nodes
         const iocData = this.timeProcessor.extractFixedIOCData();
-        console.log('[TimeTimeline] Extracted IOC data - count:', iocData.length);
-        console.log('[TimeTimeline] IOC data sample:', iocData.slice(0, 3));
+        console.debug('[TimeTimeline] Extracted', iocData.length, 'IOC cards');
 
         // Check if we have any IOC cards
         if (iocData.length === 0) {
-            console.log('[TimeTimeline] No IOC cards found, showing empty message');
             container.createEl('p', {
                 text: 'No IOC cards found in the current canvas. Create some IOC cards first to see the timeline.',
                 cls: 'timeline-empty-message'
@@ -60,7 +58,6 @@ export class RenderTimelinesModal extends Modal {
 
         // Sort ascending by event time so the earliest IOC appears first
         iocData.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
-        console.log('[TimeTimeline] Sorted IOC data by time');
 
         const timelineContainer = container.createDiv('timeline-container');
 
@@ -91,31 +88,15 @@ export class RenderTimelinesModal extends Modal {
             const titleEl = detailsContainer.createEl('h3', { text: ioc.type });
             titleEl.style.textShadow = `0 1px 3px ${ioc.color}40`;
 
-            // DEBUG: Log value display for this IOC
-            console.log('═══════════════════════════════════════════════════');
-            console.log('[TimeTimeline] ===== RENDERING IOC CARD =====');
-            console.log('[TimeTimeline] IOC Type:', ioc.type);
-            console.log('[TimeTimeline] IOC Value:', JSON.stringify(ioc.value));
-            console.log('[TimeTimeline] Value is truthy?', !!ioc.value);
-            console.log('[TimeTimeline] Value after trim:', ioc.value ? JSON.stringify(ioc.value.trim()) : 'N/A');
-            console.log('[TimeTimeline] Will display value?', !!(ioc.value && ioc.value.trim()));
-            console.log('[TimeTimeline] IOC Time:', ioc.time);
-
             // Display time on first line
             const timeEl = detailsContainer.createDiv('timeline-time');
             timeEl.innerHTML = `🕐 Time: ${ioc.time}`;
-            console.log('[TimeTimeline] Displaying time:', timeEl.innerHTML);
 
             // Display value on its own line below if available
             if (ioc.value && ioc.value.trim()) {
                 const valueEl = detailsContainer.createDiv('timeline-value');
                 valueEl.innerHTML = `📌 Value: ${ioc.value}`;
-                console.log('[TimeTimeline] ✓ DISPLAYING value:', valueEl.innerHTML);
-            } else {
-                console.log('[TimeTimeline] ✗ NO VALUE to display');
-                console.log('[TimeTimeline] Reason: value is', ioc.value === undefined ? 'undefined' : ioc.value === null ? 'null' : ioc.value === '' ? 'empty string' : 'falsy after trim');
             }
-            console.log('═══════════════════════════════════════════════════');
 
             if (ioc.splunkQuery && ioc.splunkQuery.trim()) {
                 const splunkEl = detailsContainer.createDiv('timeline-splunk');

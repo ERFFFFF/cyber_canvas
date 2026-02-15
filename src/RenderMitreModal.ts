@@ -75,6 +75,33 @@ export class RenderMitreModal extends Modal {
     private readonly TECHNIQUE_TRUNCATE_LIMIT = 180;
     private readonly SUBTECHNIQUE_TRUNCATE_LIMIT = 100;
 
+    /**
+     * Whether the severity represents a critical error (red indicator).
+     */
+    private isCriticalSeverity(severity: string): boolean {
+        return severity === 'unknown_technique'
+            || severity === 'unknown_tactic'
+            || severity === 'empty_tactic';
+    }
+
+    /**
+     * Get the appropriate icon for a validation severity level.
+     */
+    private getSeverityIcon(severity: string): string {
+        return this.isCriticalSeverity(severity) ? '🔴' : '⚠️';
+    }
+
+    /**
+     * Apply the appropriate CSS validation class based on severity.
+     */
+    private applySeverityClass(element: HTMLElement, severity: string): void {
+        if (this.isCriticalSeverity(severity)) {
+            element.addClass('mitre-technique-error');
+        } else if (severity === 'mismatch') {
+            element.addClass('mitre-technique-warning');
+        }
+    }
+
     constructor(app: App, plugin: any) {
         super(app);
         this.plugin = plugin;
@@ -129,40 +156,37 @@ export class RenderMitreModal extends Modal {
     }
 
     /**
-     * Toggle technique expansion (expand/collapse).
-     * Handles description swap and subtechniques rendering.
+     * Toggle expansion (expand/collapse) for techniques or subtechniques.
+     * Handles description swap and optional subtechniques rendering.
      *
-     * @param techItem - The technique DOM element
-     * @param technique - The technique data object
-     * @param subtechniques - Array of subtechniques (if any)
+     * @param element - The technique/subtechnique DOM element
+     * @param subtechniques - Subtechniques to render (only for parent techniques)
      */
-    private toggleTechniqueExpansion(
-        techItem: HTMLElement,
-        technique: MitreTechnique,
-        subtechniques: MitreTechnique[]
+    private toggleExpansion(
+        element: HTMLElement,
+        subtechniques?: MitreTechnique[]
     ): void {
-        const isCollapsed = techItem.hasClass('collapsed');
-        const expandIcon = techItem.querySelector('.mitre-expand-icon') as HTMLElement;
-        const descEl = techItem.querySelector('.mitre-technique-description') as HTMLElement;
+        const isCollapsed = element.hasClass('collapsed');
+        const expandIcon = element.querySelector('.mitre-expand-icon') as HTMLElement;
+        const descEl = element.querySelector('.mitre-technique-description') as HTMLElement;
 
         if (isCollapsed) {
             // EXPAND
-            techItem.removeClass('collapsed');
-            techItem.addClass('expanded');
-            techItem.setAttribute('data-is-expanded', 'true');
+            element.removeClass('collapsed');
+            element.addClass('expanded');
+            element.setAttribute('data-is-expanded', 'true');
             if (expandIcon) expandIcon.setText('▼');
 
-            // Render subtechniques if any
-            if (subtechniques.length > 0) {
-                this.renderSubtechniques(techItem, subtechniques, this.currentSearchState);
+            // Render subtechniques if provided (only for parent techniques)
+            if (subtechniques && subtechniques.length > 0) {
+                this.renderSubtechniques(element, subtechniques, this.currentSearchState);
             }
 
             // Show full description
             if (descEl) {
-                const fullDesc = techItem.getAttribute('data-full-description');
+                const fullDesc = element.getAttribute('data-full-description');
                 if (fullDesc) {
                     descEl.textContent = fullDesc;
-                    // Re-apply search highlighting if active
                     if (this.currentSearchState?.isActive) {
                         this.highlightMatches(descEl, fullDesc, this.currentSearchState);
                     }
@@ -170,83 +194,23 @@ export class RenderMitreModal extends Modal {
             }
         } else {
             // COLLAPSE
-            techItem.removeClass('expanded');
-            techItem.addClass('collapsed');
-            techItem.setAttribute('data-is-expanded', 'false');
+            element.removeClass('expanded');
+            element.addClass('collapsed');
+            element.setAttribute('data-is-expanded', 'false');
             if (expandIcon) expandIcon.setText('▶');
 
-            // Remove subtechniques container
-            techItem.querySelector('.mitre-subtechniques-container')?.remove();
+            // Remove subtechniques container if present
+            element.querySelector('.mitre-subtechniques-container')?.remove();
 
             // Show truncated description
             if (descEl) {
-                const fullDesc = techItem.getAttribute('data-full-description');
-                const truncatedDesc = techItem.getAttribute('data-truncated-description');
-                if (truncatedDesc) {
-                    descEl.textContent = truncatedDesc;
-                    // Re-apply search highlighting if active
+                const fullDesc = element.getAttribute('data-full-description');
+                const truncatedDesc = element.getAttribute('data-truncated-description');
+                const displayText = truncatedDesc || (fullDesc ? this.truncateDescription(fullDesc) : null);
+                if (displayText) {
+                    descEl.textContent = displayText;
                     if (this.currentSearchState?.isActive) {
-                        this.highlightMatches(descEl, truncatedDesc, this.currentSearchState);
-                    }
-                } else if (fullDesc) {
-                    const truncated = this.truncateDescription(fullDesc);
-                    descEl.textContent = truncated;
-                    if (this.currentSearchState?.isActive) {
-                        this.highlightMatches(descEl, truncated, this.currentSearchState);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Toggle subtechnique expansion (expand/collapse).
-     * Handles description swap for individual subtechniques.
-     *
-     * @param subItem - The subtechnique DOM element
-     * @param subtechnique - The subtechnique data object
-     */
-    private toggleSubtechniqueExpansion(
-        subItem: HTMLElement,
-        subtechnique: MitreTechnique
-    ): void {
-        const isCollapsed = subItem.hasClass('collapsed');
-        const expandIcon = subItem.querySelector('.mitre-expand-icon') as HTMLElement;
-        const descEl = subItem.querySelector('.mitre-technique-description') as HTMLElement;
-
-        if (isCollapsed) {
-            // EXPAND
-            subItem.removeClass('collapsed');
-            subItem.addClass('expanded');
-            subItem.setAttribute('data-is-expanded', 'true');
-            if (expandIcon) expandIcon.setText('▼');
-
-            // Show full description
-            if (descEl) {
-                const fullDesc = subItem.getAttribute('data-full-description');
-                if (fullDesc) {
-                    descEl.textContent = fullDesc;
-                    // Re-apply search highlighting if active
-                    if (this.currentSearchState?.isActive) {
-                        this.highlightMatches(descEl, fullDesc, this.currentSearchState);
-                    }
-                }
-            }
-        } else {
-            // COLLAPSE
-            subItem.removeClass('expanded');
-            subItem.addClass('collapsed');
-            subItem.setAttribute('data-is-expanded', 'false');
-            if (expandIcon) expandIcon.setText('▶');
-
-            // Show truncated description
-            if (descEl) {
-                const truncatedDesc = subItem.getAttribute('data-truncated-description');
-                if (truncatedDesc) {
-                    descEl.textContent = truncatedDesc;
-                    // Re-apply search highlighting if active
-                    if (this.currentSearchState?.isActive) {
-                        this.highlightMatches(descEl, truncatedDesc, this.currentSearchState);
+                        this.highlightMatches(descEl, displayText, this.currentSearchState);
                     }
                 }
             }
@@ -576,7 +540,7 @@ export class RenderMitreModal extends Modal {
             const errorItem = categorySection.createDiv('mitre-error-item');
 
             // Apply severity styling
-            if (error.severity === 'unknown_technique' || error.severity === 'unknown_tactic' || error.severity === 'empty_tactic') {
+            if (this.isCriticalSeverity(error.severity)) {
                 errorItem.addClass('mitre-error-critical');  // Red
             } else if (error.severity === 'mismatch') {
                 errorItem.addClass('mitre-error-warning');   // Orange
@@ -632,22 +596,57 @@ export class RenderMitreModal extends Modal {
 
     /**
      * Determines if newSeverity should override existingSeverity when aggregating.
-     * Priority: unknown_technique > unknown_tactic > empty_tactic > mismatch > valid
+     *
+     * When multiple IOC cards reference the same technique with different validation
+     * results, we need to decide which severity to display in the matrix. This uses
+     * a priority ranking system where more critical errors override less critical ones.
+     *
+     * **Ranking (highest to lowest priority):**
+     * 1. `unknown_technique` (5) - Technique ID not in dataset (CRITICAL - red)
+     * 2. `unknown_tactic` (4) - Tactic name not recognized (CRITICAL - red)
+     * 3. `empty_tactic` (3) - Technique filled but tactic empty (CRITICAL - red)
+     * 4. `mismatch` (2) - Both valid but don't belong together (WARNING - orange)
+     * 5. `valid` (1) - Correct pairing (SUCCESS - green)
+     *
+     * **Example:** If 3 cards reference T1566, one with valid pairing, one with mismatch,
+     * and one with unknown_tactic, the final severity shown is `unknown_tactic` (highest rank).
+     *
+     * @param newSeverity - Severity from newly processed card
+     * @param existingSeverity - Current aggregated severity for this technique
+     * @returns true if newSeverity should replace existingSeverity
      */
     private shouldOverrideSeverity(
         newSeverity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic',
         existingSeverity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic'
     ): boolean {
+        // Numerical ranking: higher number = more critical error
         const severityRank = {
-            'unknown_technique': 5,
-            'unknown_tactic': 4,
-            'empty_tactic': 3,
-            'mismatch': 2,
-            'valid': 1
+            'unknown_technique': 5,  // Red - technique doesn't exist
+            'unknown_tactic': 4,     // Red - tactic name/abbrev not found
+            'empty_tactic': 3,       // Red - missing required field
+            'mismatch': 2,           // Orange - wrong tactic for technique
+            'valid': 1               // Green - correct pairing
         };
         return severityRank[newSeverity] > severityRank[existingSeverity];
     }
 
+    /**
+     * Aggregate MITRE tactics and techniques from IOC cards into full matrix structure.
+     *
+     * This is the core aggregation algorithm that builds the complete MITRE ATT&CK matrix
+     * showing ALL 14 tactics and ALL ~800+ techniques, with found techniques highlighted
+     * and validated. Uses a 5-step process for building the matrix and collecting errors.
+     *
+     * **Algorithm Overview:**
+     * 1. Build map of found techniques from IOC cards (with validation per card)
+     * 2. Build full tactic structure from dataset (all 14 tactics)
+     * 3. Populate ALL techniques from dataset (found and unfound)
+     * 4. Convert to array and sort by kill chain order
+     * 5. Collect validation errors for display
+     *
+     * @param iocData - Array of parsed IOC nodes from canvas
+     * @returns Array of MitreTactic objects with nested techniques
+     */
     private async aggregateTacticsTechniques(iocData: IOCNodeData[]): Promise<MitreTactic[]> {
         // Wait for dataset to load
         if (!this.mitreDataset) {
@@ -663,7 +662,18 @@ export class RenderMitreModal extends Modal {
         console.log('[MitreModal] Starting full matrix aggregation with', iocData.length, 'IOC cards');
         console.log('[MitreModal] Dataset has', Object.keys(this.mitreDataset!.techniques).length, 'techniques');
 
+        // ---------------------------------------------------------------
         // STEP 1: Build map of found techniques from IOC cards
+        // ---------------------------------------------------------------
+        // Loop through all IOC cards and extract MITRE tactic/technique fields.
+        // For each unique technique ID, track:
+        //   - count: how many IOC cards reference it
+        //   - iocCards: array of node IDs
+        //   - severity: worst validation result (using shouldOverrideSeverity)
+        //   - validationMessage: error message if invalid
+        //   - userProvidedTactic: original tactic string from IOC card
+        //
+        // Also build cardValidations map for per-card error reporting.
         const foundTechniques = new Map<string, {
             count: number;
             iocCards: string[];
@@ -689,7 +699,14 @@ export class RenderMitreModal extends Modal {
             const rawTactic = (ioc.tactic || '').trim();
             const rawTechnique = (ioc.technique || '').trim();
 
-            // Case 1: Empty technique - always skip (can't validate without a technique)
+            // ---------------------------------------------------------------
+            // VALIDATION CASE 1: Empty technique - always skip
+            // ---------------------------------------------------------------
+            // If the technique field is empty, we cannot validate anything.
+            // These cards are silently ignored (not counted as errors) because
+            // an empty technique means the analyst hasn't filled in the MITRE
+            // fields yet. We only validate cards where the analyst has provided
+            // at least a technique ID.
             if (!rawTechnique) {
                 console.debug('[MitreModal] Skipping IOC card with empty technique:', {
                     id: ioc.id,
@@ -707,7 +724,18 @@ export class RenderMitreModal extends Modal {
             const techniqueId = this.extractTechniqueId(technique);
             const techniqueName = this.extractTechniqueName(technique);
 
-            // Case 2: Filled technique but empty tactic - show error
+            // ---------------------------------------------------------------
+            // VALIDATION CASE 2: Filled technique but empty tactic - error
+            // ---------------------------------------------------------------
+            // The analyst provided a technique but left the tactic field empty.
+            // This is an ERROR because we cannot validate the technique-tactic
+            // pairing without both fields. The technique will be shown in the
+            // matrix with "empty_tactic" severity (red) and an explicit error
+            // message: "Tactic field is empty".
+            //
+            // This is different from Case 1 (both empty) where we silently skip.
+            // Here, the analyst has started filling in MITRE fields but forgot
+            // the tactic, so we flag it as an issue.
             if (!rawTactic) {
                 console.debug('[MitreModal] Found IOC card with empty tactic:', {
                     id: ioc.id,
@@ -758,10 +786,21 @@ export class RenderMitreModal extends Modal {
                 return;
             }
 
-            // Case 3: Both tactic and technique filled - normal validation
+            // ---------------------------------------------------------------
+            // VALIDATION CASE 3: Both tactic and technique filled - normal validation
+            // ---------------------------------------------------------------
+            // This is the standard validation path. Both fields are filled, so
+            // we can check:
+            //   1. Does the technique ID exist in the dataset? (unknown_technique)
+            //   2. Does the tactic name/abbreviation exist? (unknown_tactic)
+            //   3. Does this technique belong to this tactic? (mismatch)
+            //   4. If all checks pass, mark as valid
+            //
+            // Validation is performed by MitreLoader.validateTechniqueTactic()
+            // which returns a severity enum and optional error message.
             const tactic = rawTactic;
 
-            // Validate technique-tactic mapping
+            // Validate technique-tactic mapping using MitreLoader
             const validation = validateTechniqueTactic(techniqueId, tactic, this.mitreDataset!);
 
             console.debug('[MitreModal] Found technique:', {
@@ -805,10 +844,18 @@ export class RenderMitreModal extends Modal {
 
         console.log('[MitreModal] Found', foundTechniques.size, 'unique techniques in IOC cards');
 
+        // ---------------------------------------------------------------
         // STEP 2: Build full tactic structure from dataset
+        // ---------------------------------------------------------------
+        // Create a MitreTactic entry for ALL 14 tactics in the ATT&CK framework,
+        // regardless of whether any IOC cards reference them. This ensures the
+        // modal displays the complete matrix with empty tactics shown for context.
+        //
+        // Each tactic starts with an empty techniques array that will be populated
+        // in STEP 3.
         const tacticMap = new Map<string, MitreTactic>();
 
-        // Initialize ALL 14 tactics
+        // Initialize ALL 14 tactics from the dataset
         Object.values(this.mitreDataset!.tactics).forEach(tacticData => {
             tacticMap.set(tacticData.id, {
                 name: tacticData.id,
@@ -817,7 +864,20 @@ export class RenderMitreModal extends Modal {
             });
         });
 
+        // ---------------------------------------------------------------
         // STEP 3: Populate ALL techniques from dataset
+        // ---------------------------------------------------------------
+        // Loop through ALL ~800+ techniques in the MITRE dataset and add them
+        // to their respective tactics. This creates the complete matrix showing
+        // both found and unfound techniques.
+        //
+        // For each technique:
+        //   - Check if it was found in IOC cards (using foundTechniques map)
+        //   - If found: use aggregated count/severity/validation from STEP 1
+        //   - If not found: mark as severity='not_found' (will render gray)
+        //   - If subtechnique: store separately in subtechniquesMap
+        //   - If parent technique: add to ALL tactics it belongs to
+        //
         // Clear subtechniques map for fresh aggregation
         this.subtechniquesMap.clear();
 
@@ -869,10 +929,20 @@ export class RenderMitreModal extends Modal {
             });
         });
 
+        // ---------------------------------------------------------------
         // STEP 4: Convert to array and sort
+        // ---------------------------------------------------------------
+        // Convert the tacticMap into an array and sort tactics by the official
+        // MITRE kill chain order (Reconnaissance → Impact). This ensures the
+        // matrix columns appear in the correct sequence matching the standard
+        // ATT&CK framework visualization.
+        //
+        // Within each tactic, techniques are sorted so:
+        //   1. Found techniques appear first (isFound=true)
+        //   2. Then sorted alphabetically by technique ID
         const tactics = Array.from(tacticMap.values());
 
-        // Sort tactics by MITRE kill chain order
+        // Sort tactics by MITRE kill chain order (14 tactics from left to right)
         const tacticOrder = [
             'TA0043', // Reconnaissance
             'TA0042', // Resource Development
@@ -915,11 +985,22 @@ export class RenderMitreModal extends Modal {
             foundTechniques: foundTechniques.size
         });
 
-        // STEP 5: Collect validation errors for display (using per-card validation)
+        // ---------------------------------------------------------------
+        // STEP 5: Collect validation errors for display
+        // ---------------------------------------------------------------
+        // Build the validation errors array for rendering at the top of the modal.
+        // Uses the per-card validation data collected in STEP 1 to show which
+        // specific IOC cards have errors.
+        //
+        // Groups errors by technique+severity to avoid duplicates:
+        //   - Each unique technique+severity combo gets one error entry
+        //   - Lists all affected IOC cards under that error
+        //   - Categorized by severity for display (Missing Tactic, Unknown Tactic,
+        //     Technique Errors, Validation Mismatches)
         console.log('[MitreModal] Collecting validation errors from card-level validation...');
         this.validationErrors = [];
 
-        // Group cards by technique for display
+        // Group cards by technique+severity for display
         const errorsByTechnique = new Map<string, {
             techniqueId: string;
             techniqueName: string;
@@ -1093,13 +1174,7 @@ export class RenderMitreModal extends Modal {
                 techItem.addClass('mitre-technique-unfound'); // Gray, no validation
             } else {
                 // Apply validation styling for found techniques
-                if (technique.severity === 'unknown_technique' ||
-                    technique.severity === 'unknown_tactic' ||
-                    technique.severity === 'empty_tactic') {
-                    techItem.addClass('mitre-technique-error');      // Red
-                } else if (technique.severity === 'mismatch') {
-                    techItem.addClass('mitre-technique-warning');    // Orange
-                }
+                this.applySeverityClass(techItem, technique.severity);
                 // else: valid techniques get default green styling
             }
 
@@ -1117,22 +1192,19 @@ export class RenderMitreModal extends Modal {
                 // Click handler for expand/collapse
                 techItem.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    this.toggleTechniqueExpansion(techItem, technique, subtechniques);
+                    this.toggleExpansion(techItem, subtechniques);
                 });
             }
 
             // Show validation icon ONLY for found techniques with issues
             if (technique.isFound && technique.severity !== 'valid' && technique.severity !== 'not_found') {
-                const icon = (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic' || technique.severity === 'empty_tactic')
-                    ? '🔴'
-                    : '⚠️';
                 const warningEl = techInfo.createEl('span', {
                     cls: 'mitre-validation-icon',
                     attr: {
                         'title': technique.validationMessage || 'Warning'
                     }
                 });
-                warningEl.innerHTML = icon;
+                warningEl.innerHTML = this.getSeverityIcon(technique.severity);
             }
 
             techInfo.createEl('span', {
@@ -1212,13 +1284,7 @@ export class RenderMitreModal extends Modal {
             if (!subtech.isFound) {
                 subItem.addClass('mitre-technique-unfound');
             } else {
-                if (subtech.severity === 'unknown_technique' ||
-                    subtech.severity === 'unknown_tactic' ||
-                    subtech.severity === 'empty_tactic') {
-                    subItem.addClass('mitre-technique-error');
-                } else if (subtech.severity === 'mismatch') {
-                    subItem.addClass('mitre-technique-warning');
-                }
+                this.applySeverityClass(subItem, subtech.severity);
             }
 
             const subInfo = subItem.createDiv('mitre-technique-info');
@@ -1235,22 +1301,19 @@ export class RenderMitreModal extends Modal {
                 // Click handler for expand/collapse
                 subItem.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    this.toggleSubtechniqueExpansion(subItem, subtech);
+                    this.toggleExpansion(subItem);
                 });
             }
 
             // Show validation icon for found subtechniques with issues
             if (subtech.isFound && subtech.severity !== 'valid' && subtech.severity !== 'not_found') {
-                const icon = (subtech.severity === 'unknown_technique' || subtech.severity === 'unknown_tactic' || subtech.severity === 'empty_tactic')
-                    ? '🔴'
-                    : '⚠️';
                 const warningEl = subInfo.createEl('span', {
                     cls: 'mitre-validation-icon',
                     attr: {
                         'title': subtech.validationMessage || 'Warning'
                     }
                 });
-                warningEl.innerHTML = icon;
+                warningEl.innerHTML = this.getSeverityIcon(subtech.severity);
             }
 
             subInfo.createEl('span', {
@@ -1301,6 +1364,21 @@ export class RenderMitreModal extends Modal {
     /**
      * Parse search query into keywords and phrases.
      *
+     * Supports two types of search terms:
+     * 1. **Keywords**: Space-separated words (e.g., "spear phishing" → ["spear", "phishing"])
+     * 2. **Phrases**: Quoted strings (e.g., "spear phishing" → ["spear phishing"])
+     *
+     * **Phrase Syntax:**
+     * - Quoted phrases match exact sequences: "lateral movement" only matches that phrase
+     * - Keywords match anywhere: lateral movement matches both separately
+     * - Unmatched quotes are automatically removed (e.g., "spear phishing becomes spear phishing)
+     *
+     * **Algorithm:**
+     * 1. Check for unmatched quotes and remove the last one
+     * 2. Extract all quoted phrases using regex: /"([^"]+)"/g
+     * 3. Remove phrases from query and split remaining text into keywords
+     * 4. Normalize all terms to lowercase for case-insensitive matching
+     *
      * @param query - Raw search query string
      * @returns SearchState object with parsed keywords and phrases
      */
@@ -1317,15 +1395,17 @@ export class RenderMitreModal extends Modal {
         const trimmedQuery = query.trim();
 
         // Handle unmatched quotes (odd number of quotes)
+        // Example: user types "spear phishing without closing quote
         const quoteCount = (trimmedQuery.match(/"/g) || []).length;
         let processedQuery = trimmedQuery;
         if (quoteCount % 2 !== 0) {
-            // Remove the last unmatched quote
+            // Remove the last unmatched quote to prevent regex issues
             const lastQuoteIndex = processedQuery.lastIndexOf('"');
             processedQuery = processedQuery.substring(0, lastQuoteIndex) + processedQuery.substring(lastQuoteIndex + 1);
         }
 
-        // Extract quoted phrases
+        // Extract quoted phrases using regex
+        // Regex: /"([^"]+)"/g matches "text" and captures text in group 1
         const phrases: string[] = [];
         const phraseRegex = /"([^"]+)"/g;
         let match;
@@ -1376,8 +1456,24 @@ export class RenderMitreModal extends Modal {
     /**
      * Check if a technique matches the search query.
      *
+     * **Search Hierarchy (checked in order):**
+     * 1. **Technique ID** (e.g., "T1566") - highest priority, exact match
+     * 2. **Technique Name** (e.g., "Phishing") - common use case
+     * 3. **Technique Description** - finds techniques by their behavior description
+     * 4. **Subtechniques** - if any subtechnique matches, show the parent too
+     *
+     * **Parent/Subtechnique Logic:**
+     * When a subtechnique matches the search, the parent technique is also
+     * included in results so the user can expand it and see the matching
+     * subtechnique. For example, searching "spearphishing" will show T1566
+     * (Phishing) with T1566.001 (Spearphishing Attachment) as an expandable child.
+     *
+     * **Match Precedence:**
+     * Returns as soon as a match is found (short-circuits), prioritizing
+     * more specific matches (ID > name > description > subtechnique).
+     *
      * @param technique - Technique to check
-     * @param searchState - Parsed search state
+     * @param searchState - Parsed search state with keywords/phrases
      * @returns SearchMatch result with match details
      */
     private matchesSearch(technique: MitreTechnique, searchState: SearchState): SearchMatch {
@@ -1385,7 +1481,7 @@ export class RenderMitreModal extends Modal {
             return { matched: true };
         }
 
-        // Check technique ID
+        // 1. Check technique ID (e.g., "T1566")
         if (this.textMatchesQuery(technique.id, searchState)) {
             return {
                 matched: true,
@@ -1394,7 +1490,7 @@ export class RenderMitreModal extends Modal {
             };
         }
 
-        // Check technique name
+        // 2. Check technique name (e.g., "Phishing")
         if (this.textMatchesQuery(technique.name, searchState)) {
             return {
                 matched: true,
@@ -1403,7 +1499,7 @@ export class RenderMitreModal extends Modal {
             };
         }
 
-        // Check technique description
+        // 3. Check technique description (e.g., "adversary sends email")
         if (technique.description && this.textMatchesQuery(technique.description, searchState)) {
             return {
                 matched: true,
@@ -1412,7 +1508,7 @@ export class RenderMitreModal extends Modal {
             };
         }
 
-        // Check subtechniques (if parent matches via subtechnique, show parent)
+        // 4. Check subtechniques (if child matches, show parent for context)
         const subtechniques = this.subtechniquesMap.get(technique.id) || [];
         for (const subtech of subtechniques) {
             if (this.textMatchesQuery(subtech.id, searchState) ||
@@ -1543,7 +1639,7 @@ export class RenderMitreModal extends Modal {
                 let color: string;
                 if (technique.severity === 'valid') {
                     color = "#66bb6a";  // Green - valid
-                } else if (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic' || technique.severity === 'empty_tactic') {
+                } else if (this.isCriticalSeverity(technique.severity)) {
                     color = "#f44336";  // Red - unknown
                 } else if (technique.severity === 'mismatch') {
                     color = "#ffa500";  // Orange - wrong tactic
@@ -1554,8 +1650,7 @@ export class RenderMitreModal extends Modal {
                 // Build comment with validation status
                 let comment = `Used in ${technique.count} IOC card${technique.count > 1 ? 's' : ''}`;
                 if (technique.severity !== 'valid' && technique.validationMessage) {
-                    const icon = (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic' || technique.severity === 'empty_tactic') ? '🔴' : '⚠️';
-                    comment += `\n${icon} ${technique.validationMessage}`;
+                    comment += `\n${this.getSeverityIcon(technique.severity)} ${technique.validationMessage}`;
                 }
 
                 layer.techniques.push({
@@ -1602,27 +1697,47 @@ export class RenderMitreModal extends Modal {
 
     /**
      * Add drag handles and resize functionality to the modal.
+     *
      * Creates 8 resize handles (4 corners + 4 edges) and attaches drag listeners.
+     * Each handle calculates new dimensions based on mouse movement direction:
+     *
+     * **Coordinate Math:**
+     * - **East (E):** Drag right increases width by deltaX
+     * - **West (W):** Drag left decreases width, shifts modal left
+     * - **South (S):** Drag down increases height by deltaY
+     * - **North (N):** Drag up decreases height, shifts modal up
+     * - **Corners:** Combine two directions (e.g., NE = North + East)
+     *
+     * **Constraints:**
+     * - MIN_WIDTH: 600px (prevents crushing tactic columns)
+     * - MIN_HEIGHT: 400px (prevents hiding header/controls)
+     * - MAX_WIDTH/MAX_HEIGHT: 95% of viewport (prevents overflow)
+     *
+     * **Position Updates:**
+     * When resizing from North or West edges, the modal position must shift
+     * to maintain the opposite edge's position. For example, dragging the West
+     * edge left by 50px must also move the modal left by 50px.
      */
     private makeResizable(): void {
         const modal = this.modalEl;
 
-        // Minimum and maximum constraints
-        const MIN_WIDTH = 600;
-        const MIN_HEIGHT = 400;
-        const MAX_WIDTH = window.innerWidth * 0.95;
+        // Minimum and maximum constraints for modal dimensions
+        const MIN_WIDTH = 600;   // Narrower would crush tactic columns
+        const MIN_HEIGHT = 400;  // Shorter would hide header/controls
+        const MAX_WIDTH = window.innerWidth * 0.95;   // Leave 5% viewport margin
         const MAX_HEIGHT = window.innerHeight * 0.95;
 
         // Resize handle positions: [className, cursor, isCorner]
+        // N=North, S=South, E=East, W=West
         const handles: Array<[string, string, boolean]> = [
-            ['resize-handle-n', 'ns-resize', false],
-            ['resize-handle-s', 'ns-resize', false],
-            ['resize-handle-e', 'ew-resize', false],
-            ['resize-handle-w', 'ew-resize', false],
-            ['resize-handle-ne', 'nesw-resize', true],
-            ['resize-handle-nw', 'nwse-resize', true],
-            ['resize-handle-se', 'nwse-resize', true],
-            ['resize-handle-sw', 'nesw-resize', true],
+            ['resize-handle-n', 'ns-resize', false],    // Top edge
+            ['resize-handle-s', 'ns-resize', false],    // Bottom edge
+            ['resize-handle-e', 'ew-resize', false],    // Right edge
+            ['resize-handle-w', 'ew-resize', false],    // Left edge
+            ['resize-handle-ne', 'nesw-resize', true],  // Top-right corner
+            ['resize-handle-nw', 'nwse-resize', true],  // Top-left corner
+            ['resize-handle-se', 'nwse-resize', true],  // Bottom-right corner
+            ['resize-handle-sw', 'nesw-resize', true],  // Bottom-left corner
         ];
 
         handles.forEach(([className, cursor, isCorner]) => {
@@ -1651,27 +1766,46 @@ export class RenderMitreModal extends Modal {
             };
 
             const onMouseMove = (e: MouseEvent) => {
-                const deltaX = e.clientX - startX;
-                const deltaY = e.clientY - startY;
+                // Calculate mouse movement since drag started
+                const deltaX = e.clientX - startX;  // Positive = moved right, negative = moved left
+                const deltaY = e.clientY - startY;  // Positive = moved down, negative = moved up
 
+                // Initialize new dimensions/position from starting values
                 let newWidth = startWidth;
                 let newHeight = startHeight;
                 let newLeft = startLeft;
                 let newTop = startTop;
 
+                // ---------------------------------------------------------------
                 // Calculate new dimensions based on handle direction
+                // ---------------------------------------------------------------
+                // Each handle direction updates different dimensions:
+                //   - East/West affect width
+                //   - North/South affect height
+                //   - Corners combine both
+                //
+                // Constraints (MIN/MAX) are applied to prevent invalid sizes.
+
                 if (className.includes('-e')) {
+                    // East (right edge): drag right increases width
                     newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + deltaX));
                 }
                 if (className.includes('-w')) {
+                    // West (left edge): drag left increases width, shifts modal left
+                    // Note: deltaX is negative when dragging left, so subtract it
                     newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth - deltaX));
+                    // Shift modal left by the difference to keep right edge stationary
                     newLeft = startLeft + (startWidth - newWidth);
                 }
                 if (className.includes('-s')) {
+                    // South (bottom edge): drag down increases height
                     newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight + deltaY));
                 }
                 if (className.includes('-n')) {
+                    // North (top edge): drag up increases height, shifts modal up
+                    // Note: deltaY is negative when dragging up, so subtract it
                     newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight - deltaY));
+                    // Shift modal up by the difference to keep bottom edge stationary
                     newTop = startTop + (startHeight - newHeight);
                 }
 

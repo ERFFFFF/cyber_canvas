@@ -114,146 +114,67 @@ function detectIOCType(text: string): string {
  * DEBUG: Console logs show extraction steps for troubleshooting.
  */
 function extractValue(text: string): string {
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('[IOCParser] extractValue - ===== STARTING VALUE EXTRACTION =====');
-    console.log('[IOCParser] extractValue - Input text length:', text.length);
-    console.log('[IOCParser] extractValue - Full input text:');
-    console.log(text);
-    console.log('[IOCParser] extractValue - First 400 chars:', text.substring(0, 400));
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.debug('[IOCParser] extractValue - input length:', text.length);
 
     // First try code blocks (legacy format for backward compatibility)
-    console.log('[IOCParser] extractValue - Checking for legacy code block format...');
     const codeBlockMatch = text.match(/```([\s\S]*?)```/);
     if (codeBlockMatch && codeBlockMatch[1] && codeBlockMatch[1].trim()) {
         const value = codeBlockMatch[1].trim();
-        console.log('[IOCParser] extractValue - ✓ Found code block value:', value);
-        console.log('[IOCParser] extractValue - ===== EXTRACTION COMPLETE (code block) =====');
+        console.debug('[IOCParser] extractValue - found code block:', value);
         return value;
     }
-    console.log('[IOCParser] extractValue - ✗ No code block found, proceeding with field extraction');
 
     // Split by HTML header closing tag to get content after header
-    console.log('[IOCParser] extractValue - Splitting by HTML header tag "</div></div>"...');
     const parts = text.split('</div></div>');
-    console.log('[IOCParser] extractValue - Split resulted in', parts.length, 'parts');
-    if (parts.length > 1) {
-        console.log('[IOCParser] extractValue - Part 0 (header) length:', parts[0].length);
-        console.log('[IOCParser] extractValue - Part 1 (content) length:', parts[1].length);
-    }
-
     if (parts.length < 2) {
-        console.log('[IOCParser] extractValue - ✗ ERROR: No HTML header found!');
-        console.log('[IOCParser] extractValue - This means "</div></div>" was not found in the card text');
-        console.log('[IOCParser] extractValue - ===== EXTRACTION FAILED (no header) =====');
+        console.debug('[IOCParser] extractValue - no HTML header found');
         return '';
     }
 
-    console.log('[IOCParser] extractValue - ✓ HTML header found, processing content...');
-    let afterHeader = parts[1].trim(); // Trim leading/trailing whitespace
-    console.log('[IOCParser] extractValue - ===== CONTENT AFTER HEADER (FULL TEXT) =====');
-    console.log('"""');
-    console.log(afterHeader);
-    console.log('"""');
-    console.log('[IOCParser] extractValue - afterHeader length:', afterHeader.length);
-    console.log('[IOCParser] extractValue - First 400 chars:', afterHeader.substring(0, 400));
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    let afterHeader = parts[1].trim();
+    console.debug('[IOCParser] extractValue - content after header length:', afterHeader.length);
 
     // Find first field label (text ending with colon)
-    // This regex matches any characters except newline/colon, then colon, then EITHER:
-    //   - whitespace + newlines (value on next line), OR
-    //   - space + content on same line
-    console.log('[IOCParser] extractValue - Searching for first field label (pattern: [text]:)...');
     const fieldMatch = afterHeader.match(/[^:\n]+:\s*/);
     if (!fieldMatch) {
-        console.log('[IOCParser] extractValue - ✗ ERROR: No field label found!');
-        console.log('[IOCParser] extractValue - afterHeader starts with:', JSON.stringify(afterHeader.substring(0, 100)));
-        console.log('[IOCParser] extractValue - Looking for pattern like "fieldname: \\n"');
-        console.log('[IOCParser] extractValue - ===== EXTRACTION FAILED (no field label) =====');
+        console.debug('[IOCParser] extractValue - no field label found');
         return '';
     }
 
-    const firstFieldName = fieldMatch[0].trim();
-    console.log('[IOCParser] extractValue - ✓ Found FIRST field:', JSON.stringify(firstFieldName));
-    console.log('[IOCParser] extractValue - Field match raw text:', JSON.stringify(fieldMatch[0]));
-    console.log('[IOCParser] extractValue - Field match index:', fieldMatch.index, 'length:', fieldMatch[0].length);
-    console.log('[IOCParser] extractValue - This field will be used as the card VALUE');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.debug('[IOCParser] extractValue - first field:', fieldMatch[0].trim());
 
     // Get content after the field label
-    // Extract everything after "FieldName: " (whether value is on same line or next line)
-    console.log('[IOCParser] extractValue - Extracting content after field label...');
     const afterFieldLabel = afterHeader.substring(fieldMatch.index! + fieldMatch[0].length);
-    console.log('[IOCParser] extractValue - ===== CONTENT AFTER FIELD LABEL (should contain value) =====');
-    console.log('"""');
-    console.log(afterFieldLabel);
-    console.log('"""');
-    console.log('[IOCParser] extractValue - afterFieldLabel length:', afterFieldLabel.length);
-    console.log('[IOCParser] extractValue - First 300 chars:', afterFieldLabel.substring(0, 300));
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     // Find the first "-----" separator OR the first newline followed by another field
-    // This handles both inline values (hash: value) and next-line values
-    console.log('[IOCParser] extractValue - Searching for value delimiter (separator or next field)...');
-
-    // Look for separator first
     const separatorMatch = afterFieldLabel.match(/\n?-----/);
-
-    // Also look for next field label as a delimiter
     const nextFieldMatch = afterFieldLabel.match(/\n([^:\n]+:\s*)/);
 
     let value: string;
     let delimiterIndex: number | undefined;
-    let delimiterType: string;
 
     // Determine which delimiter comes first
     if (separatorMatch && separatorMatch.index !== undefined) {
         delimiterIndex = separatorMatch.index;
-        delimiterType = 'separator (-----)';
     }
 
     if (nextFieldMatch && nextFieldMatch.index !== undefined) {
         if (delimiterIndex === undefined || nextFieldMatch.index < delimiterIndex) {
             delimiterIndex = nextFieldMatch.index;
-            delimiterType = 'next field';
         }
     }
 
     if (delimiterIndex === undefined) {
         // No separator or next field found - extract everything until Time of Event
-        console.log('[IOCParser] extractValue - WARNING: No delimiter found!');
-        console.log('[IOCParser] extractValue - Searching for Time of Event as fallback...');
         const timeIndex = afterFieldLabel.indexOf('Time of Event:');
-        if (timeIndex === -1) {
-            value = afterFieldLabel;
-            console.log('[IOCParser] extractValue - No Time of Event either, using all remaining content');
-        } else {
-            value = afterFieldLabel.substring(0, timeIndex);
-            console.log('[IOCParser] extractValue - Extracted until Time of Event at index', timeIndex);
-        }
+        value = timeIndex === -1 ? afterFieldLabel : afterFieldLabel.substring(0, timeIndex);
     } else {
         // Extract content before first delimiter
         value = afterFieldLabel.substring(0, delimiterIndex);
-        console.log(`[IOCParser] extractValue - SUCCESS: Found ${delimiterType} at index`, delimiterIndex);
-        console.log('[IOCParser] extractValue - Raw value (before trim):', JSON.stringify(value));
-        console.log('[IOCParser] extractValue - Raw value length:', value.length);
     }
 
-    // Trim whitespace and return
-    console.log('[IOCParser] extractValue - Trimming whitespace from extracted value...');
     const trimmedValue = value.trim();
-    console.log('[IOCParser] extractValue - ===== FINAL EXTRACTED VALUE =====');
-    console.log('[IOCParser] extractValue - Value (trimmed):', JSON.stringify(trimmedValue));
-    console.log('[IOCParser] extractValue - Value length:', trimmedValue.length);
-    console.log('[IOCParser] extractValue - Value is empty?', trimmedValue.length === 0);
-    if (trimmedValue.length === 0) {
-        console.log('[IOCParser] extractValue - ⚠️  WARNING: Extracted value is EMPTY!');
-        console.log('[IOCParser] extractValue - This means no content was found between field label and separator');
-    } else {
-        console.log('[IOCParser] extractValue - ✓ SUCCESS: Value extracted successfully');
-    }
-    console.log('[IOCParser] extractValue - ===== EXTRACTION COMPLETE =====');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.debug('[IOCParser] extractValue - result:', trimmedValue || '(empty)');
     return trimmedValue;
 }
 
@@ -434,50 +355,29 @@ function lookupTypeVisuals(iocType: string, fallbackColor: string): { icon: stri
  *          text does not match any known IOC type
  */
 export function parseIOCNode(node: any): IOCNodeData | null {
-    console.log('[IOCParser] parseIOCNode - Processing node ID:', node.id);
+    console.debug('[IOCParser] parseIOCNode - node:', node.id);
 
-    // Validate node has text content
     if (!node.text) {
-        console.log('[IOCParser] parseIOCNode - Node has no text, skipping');
         return null;
     }
-
-    const text = node.text;
-    console.log('[IOCParser] parseIOCNode - Node text length:', text.length);
 
     // Step 1: Detect IOC type
-    const iocType = detectIOCType(text);
-    console.log('[IOCParser] parseIOCNode - Detected IOC type:', iocType || 'NONE');
+    const iocType = detectIOCType(node.text);
     if (!iocType) {
-        console.log('[IOCParser] parseIOCNode - No IOC type detected, returning null');
         return null;
     }
 
-    // Step 2: Extract field values from the markdown content
-    console.log('[IOCParser] parseIOCNode - Extracting fields for type:', iocType);
-    console.log('[IOCParser] parseIOCNode - ===== VALUE EXTRACTION START =====');
-    const value = extractValue(text);
-    console.log('[IOCParser] parseIOCNode - ===== VALUE EXTRACTION END =====');
-    console.log('[IOCParser] parseIOCNode - EXTRACTED VALUE:', value || '(empty/null)', '(length:', value ? value.length : 0, ')');
-
-    const time = extractTime(text);
-    const splunkQuery = extractSplunkQuery(text);
-    const tactic = extractTactic(text);
-    const technique = extractTechnique(text);
-    const cardId = extractCardId(text);
-
-    console.log('[IOCParser] parseIOCNode - All extracted fields:');
-    console.log('  - value:', value || '**EMPTY**');
-    console.log('  - time:', time || '(empty)');
-    console.log('  - splunkQuery:', splunkQuery || '(empty)');
-    console.log('  - tactic:', tactic || '(empty)');
-    console.log('  - technique:', technique || '(empty)');
-    console.log('  - cardId:', cardId || '(empty)');
+    // Step 2: Extract field values
+    const value = extractValue(node.text);
+    const time = extractTime(node.text);
+    const splunkQuery = extractSplunkQuery(node.text);
+    const tactic = extractTactic(node.text);
+    const technique = extractTechnique(node.text);
+    const cardId = extractCardId(node.text);
 
     // Step 3: Look up icon and color from the IOC_TYPES constant
     const fallbackColor = node.color || '#333';
     const { icon, color } = lookupTypeVisuals(iocType, fallbackColor);
-    console.log('[IOCParser] parseIOCNode - Looked up visuals - color:', color, 'icon length:', icon.length);
 
     const result = {
         id: node.id,
@@ -492,9 +392,6 @@ export function parseIOCNode(node: any): IOCNodeData | null {
         color
     };
 
-    console.log('[IOCParser] parseIOCNode - ===== FINAL RESULT =====');
-    console.log('[IOCParser] parseIOCNode - Returning node with value:', result.value || '**NO VALUE**');
-    console.log('[IOCParser] parseIOCNode - Full result:', JSON.stringify(result, null, 2));
-    console.log('[IOCParser] parseIOCNode - ===== END PARSING =====');
+    console.debug('[IOCParser] parseIOCNode - result:', iocType, 'value:', value || '(empty)');
     return result;
 }

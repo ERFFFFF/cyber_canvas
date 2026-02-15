@@ -181,74 +181,54 @@ export default class IOCCanvasPlugin extends Plugin {
             const iocToolbar = document.createElement('div');
             iocToolbar.className = 'ioc-toolbar';
 
-            // --- Timeline button ---
-            const timelineItem = document.createElement('div');
-            timelineItem.className = 'canvas-control-item';
-            timelineItem.setAttribute('aria-label', 'Show Attack Timelines');
-            timelineItem.setAttribute('title', 'Show Attack Timelines');
-            timelineItem.addEventListener('click', () => {
-                new RenderTimelinesModal(this.app, this).open();
-            });
-            const timelineIcon = document.createElement('div');
-            timelineIcon.className = 'clickable-icon';
-            timelineIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-            timelineItem.appendChild(timelineIcon);
+            // SVG icons
+            const TIMELINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+            const CARDS_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+            const REDUCE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+            const MITRE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>';
 
-            // --- IOC Cards button ---
-            const cardsItem = document.createElement('div');
-            cardsItem.className = 'canvas-control-item';
-            cardsItem.setAttribute('aria-label', 'Add IOC Card');
-            cardsItem.setAttribute('title', 'Add IOC Card');
-            cardsItem.addEventListener('click', () => {
-                this.openIOCCardSelector();
-            });
-            const cardsIcon = document.createElement('div');
-            cardsIcon.className = 'clickable-icon';
-            cardsIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
-            cardsItem.appendChild(cardsIcon);
+            const timelineBtn = this.createToolbarButton('Show Attack Timelines', TIMELINE_SVG,
+                () => new RenderTimelinesModal(this.app, this).open());
 
-            // --- Reduce toggle button ---
-            const reduceItem = document.createElement('div');
-            reduceItem.className = 'canvas-control-item';
-            reduceItem.setAttribute('aria-label', 'Toggle Reduce View');
-            reduceItem.setAttribute('title', 'Toggle Reduce View');
-            reduceItem.addEventListener('click', () => {
+            const cardsBtn = this.createToolbarButton('Add IOC Card', CARDS_SVG,
+                () => this.openIOCCardSelector());
+
+            const reduceBtn = this.createToolbarButton('Toggle Reduce View', REDUCE_SVG, () => {
                 this.toggleReduceView();
-                // Toggle active visual state on the icon
-                const icon = reduceItem.querySelector('.clickable-icon');
-                if (icon) {
-                    icon.classList.toggle('is-active', this.isReducedView);
-                }
+                const icon = reduceBtn.querySelector('.clickable-icon');
+                if (icon) icon.classList.toggle('is-active', this.isReducedView);
             });
-            const reduceIcon = document.createElement('div');
-            reduceIcon.className = 'clickable-icon';
-            // Minimize/compress SVG icon
-            reduceIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
-            reduceItem.appendChild(reduceIcon);
 
-            // --- MITRE ATT&CK Mapper button ---
-            const mitreItem = document.createElement('div');
-            mitreItem.className = 'canvas-control-item';
-            mitreItem.setAttribute('aria-label', 'MITRE ATT&CK Mapper');
-            mitreItem.setAttribute('title', 'MITRE ATT&CK Mapper');
-            mitreItem.addEventListener('click', () => {
-                new RenderMitreModal(this.app, this).open();
-            });
-            const mitreIcon = document.createElement('div');
-            mitreIcon.className = 'clickable-icon';
-            // Target/crosshair SVG icon for MITRE
-            mitreIcon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>';
-            mitreItem.appendChild(mitreIcon);
+            const mitreBtn = this.createToolbarButton('MITRE ATT&CK Mapper', MITRE_SVG,
+                () => new RenderMitreModal(this.app, this).open());
 
-            iocToolbar.appendChild(timelineItem);
-            iocToolbar.appendChild(cardsItem);
-            iocToolbar.appendChild(reduceItem);
-            iocToolbar.appendChild(mitreItem);
+            iocToolbar.appendChild(timelineBtn);
+            iocToolbar.appendChild(cardsBtn);
+            iocToolbar.appendChild(reduceBtn);
+            iocToolbar.appendChild(mitreBtn);
             canvasControls.appendChild(iocToolbar);
         } catch (err) {
             // Button injection is non-critical; log and continue
             console.error('IOC Canvas: failed to inject canvas buttons', err);
         }
+    }
+
+    /**
+     * Creates a single toolbar button with SVG icon for the canvas control bar.
+     */
+    private createToolbarButton(label: string, svgIcon: string, onClick: () => void): HTMLElement {
+        const item = document.createElement('div');
+        item.className = 'canvas-control-item';
+        item.setAttribute('aria-label', label);
+        item.setAttribute('title', label);
+        item.addEventListener('click', onClick);
+
+        const icon = document.createElement('div');
+        icon.className = 'clickable-icon';
+        icon.innerHTML = svgIcon;
+        item.appendChild(icon);
+
+        return item;
     }
 
     // ---------------------------------------------------------------
@@ -257,8 +237,35 @@ export default class IOCCanvasPlugin extends Plugin {
 
     /**
      * Toggles the reduced/compact view for IOC cards on the active canvas.
-     * When reduced, CSS hides everything except the code block value, and
-     * nodes are resized to a compact single-line height.
+     *
+     * **Two-part implementation:**
+     *
+     * **1. CSS-based content hiding** (via `.ioc-reduced` class):
+     * - Hides IOC card headers, field labels, and metadata
+     * - Shows only the primary value field
+     * - Defined in styles.css (`.ioc-reduced .canvas-node-content`)
+     *
+     * **2. Node height reduction** (via canvas API):
+     * - Stores original height in node._iocOriginalHeight custom property
+     * - Resizes all text nodes to 60px height (single-line compact view)
+     * - Restores original heights when toggled off
+     *
+     * **Why 60px?**
+     * Enough to show a single line of text with padding, matches typical
+     * single-line card height in canvas views.
+     *
+     * **Algorithm:**
+     * 1. Toggle isReducedView flag
+     * 2. Add/remove `.ioc-reduced` class on canvas wrapper
+     * 3. Loop through all canvas nodes:
+     *    - If reducing: store original height, resize to 60px
+     *    - If restoring: read stored height, restore original dimensions
+     * 4. Call canvas.requestFrame() and canvas.requestSave() to persist
+     *
+     * **Obsidian Canvas API:**
+     * - `canvas.nodes` is a Map of all nodes on the canvas
+     * - `node.resize({width, height})` or `node.height =` to change dimensions
+     * - `node._iocOriginalHeight` is a custom property we add for state tracking
      */
     toggleReduceView() {
         const activeView = this.app.workspace.getActiveViewOfType(ItemView);
@@ -330,8 +337,34 @@ export default class IOCCanvasPlugin extends Plugin {
 
     /**
      * Creates an IOC card on the active canvas.
-     * @param iocTypeId - The snake_case IOC type key from IOC_TYPES
-     * @param osType    - Optional OS variant for hostname cards
+     *
+     * **Card Creation Flow:**
+     * 1. **Validate canvas view** - Ensure user is in a canvas view (not markdown/reading)
+     * 2. **Access internal canvas API** - Get canvas object from (view as any).canvas
+     * 3. **Generate timestamp-based card ID** - Format: #YYYYMMDD-HHMM (e.g., #20260214-1534)
+     * 4. **Generate card content** - Call RenderIOCCards.createCardContent()
+     * 5. **Create canvas text node** - Use canvas.createTextNode() with random position
+     * 6. **Persist to disk** - Call canvas.requestSave() to write .canvas file
+     *
+     * **Card ID Format:**
+     * - Timestamp-based for uniqueness: #YYYYMMDD-HHMM
+     * - Example: #20260214-1534 (February 14, 2026 at 3:34 PM)
+     * - Displayed as metadata field at bottom of card
+     * - Used for referencing cards in validation errors
+     *
+     * **Random Positioning:**
+     * - New cards are placed at random coordinates within a 400x400 area
+     * - User can drag cards to desired position after creation
+     * - Prevents cards from stacking exactly on top of each other
+     *
+     * **Obsidian Canvas API:**
+     * - `canvas.createTextNode()` creates a markdown text node
+     * - `pos`: {x, y} coordinates on the infinite canvas
+     * - `size`: {width, height} in pixels (default 400x400)
+     * - `text`: Markdown content (generated by RenderIOCCards)
+     *
+     * @param iocTypeId - The snake_case IOC type key from IOC_TYPES (e.g., "ip_address")
+     * @param osType - Optional OS variant for hostname cards ("windows", "macos", "linux")
      */
     createIOCCard(iocTypeId: string, osType?: string) {
         const activeView = this.app.workspace.getActiveViewOfType(ItemView);
@@ -340,6 +373,7 @@ export default class IOCCanvasPlugin extends Plugin {
             return;
         }
 
+        // Access internal canvas API (not publicly documented by Obsidian)
         const canvas = (activeView as any).canvas;
         if (!canvas) {
             new Notice('Please open a canvas first');
@@ -353,6 +387,7 @@ export default class IOCCanvasPlugin extends Plugin {
         }
 
         // Generate timestamp-based card ID (format: #YYYYMMDD-HHMM)
+        // Example: #20260214-1534 for February 14, 2026 at 3:34 PM
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -361,14 +396,16 @@ export default class IOCCanvasPlugin extends Plugin {
         const minutes = String(now.getMinutes()).padStart(2, '0');
         const cardId = `#${year}${month}${day}-${hours}${minutes}`;
 
+        // Generate markdown content for the IOC card
         const content = RenderIOCCards.createCardContent(iocType, iocTypeId, osType || null, cardId);
 
+        // Create text node on canvas with random position
         canvas.createTextNode({
-            pos: { x: Math.random() * 400, y: Math.random() * 400 },
-            size: { width: 400, height: 400 },
-            text: content
+            pos: { x: Math.random() * 400, y: Math.random() * 400 },  // Random placement
+            size: { width: 400, height: 400 },  // Standard card size
+            text: content  // Markdown with HTML header
         });
-        canvas.requestSave();
+        canvas.requestSave();  // Persist to .canvas file
 
         new Notice(`Created ${iocType.name} card`);
     }
