@@ -26,15 +26,14 @@ The build outputs `main.js` directly in the project root (consumed by Obsidian).
 - `RenderIOCCards.ts` — Generates markdown content for new IOC cards (HTML header with inline SVG + markdown fields with blank lines for user input + timestamp/Splunk/MITRE fields). Field values are entered by users in the blank space after field labels. **No separators are included in the template** - users type values directly after field labels, and the parser uses the next field or metadata section as the delimiter. Called by `main.ts` `createIOCCard()` method. **All IOC cards now include two MITRE fields**: "Mitre Tactic: " and "Mitre Technique: " for analyst input.
 
 **Shared IOC Parsing:**
-- `IOCParser.ts` — Shared module that extracts IOC data from canvas node markdown text. Used by timeline processors and MITRE modal. Exports `parseIOCNode()` and `IOCNodeData` interface. Handles IOC type detection (order-dependent regex), value extraction (looks for content between field label and next delimiter - either `-----` separator or next field label or "Time of Event"), time/Splunk/MITRE field parsing, and icon/color lookup from `IOC_TYPES`. **Includes extensive debug logging** for troubleshooting value extraction issues. **Enhanced with MITRE support** - extracts "Mitre Tactic" and "Mitre Technique" fields from IOC cards.
+- `IOCParser.ts` — Shared module that extracts IOC data from canvas node markdown text. Used by timeline processors and MITRE modal. Exports `parseIOCNode()` and `IOCNodeData` interface. Handles IOC type detection (order-dependent regex), value extraction (looks for content between field label and next delimiter - either `-----` separator or next field label or "Time of Event"), time/Splunk/MITRE field parsing, and icon/color lookup from `IOC_TYPES`. **Includes extensive debug logging** for troubleshooting value extraction issues. **Enhanced with MITRE support** - extracts "Mitre Tactic" and "Mitre Technique" fields from IOC cards. **CRITICAL**: MITRE field extraction uses `[ \t]*` (spaces/tabs only) instead of `\s*` to avoid matching newlines - prevents regex from skipping empty fields and capturing the next field's content.
 
 **Timeline Processing:**
 - `TimeTimelineProcessing.ts` — Extracts IOC data from canvas nodes via shared `IOCParser`, returns flat array for chronological sorting by "Time of Event" field. **Includes comprehensive debug logging** tracking node processing, IOC detection, value extraction success/failure, and summary statistics.
 
 **MITRE ATT&CK Integration (NEW):**
-- `MitreData.ts` — Core MITRE framework definitions. Contains `MITRE_TACTICS` (all 14 tactics from Reconnaissance to Impact with IDs, short names, abbreviations) and `MITRE_TECHNIQUES` (curated 30+ frequently-used techniques with valid tactics, subtechniques, descriptions). Provides helper functions: `normalizeTacticName()`, `isTechniqueValid()`, `validateTechniqueTacticMapping()`, `getTacticDisplayName()`, `getTechniqueInfo()`.
-- `MitreLoader.ts` — Asynchronous dataset loader that parses STIX 2.1 bundle format directly from `MITRE/enterprise-attack.json`. Extracts tactics (`x-mitre-tactic` objects) and techniques (`attack-pattern` objects) with full validation. Falls back to embedded `MitreData.ts` if JSON unavailable. Implements caching. Exports `validateTechniqueTactic()` which performs severity-level validation (valid/unknown_technique/unknown_tactic/mismatch). Includes step-by-step debug logging.
-- `RenderMitreModal.ts` — Full-screen modal displaying complete MITRE ATT&CK matrix (all 14 tactics as columns, all techniques from dataset). Aggregates IOC card MITRE tactic/technique fields and validates technique-tactic pairings with severity indicators (green=valid, orange=warning, red=error, gray=unfound). Features: expandable techniques with subtechniques, description truncation with expand/collapse, count badges for found techniques, export to MITRE ATT&CK Navigator JSON format (importable at https://mitre-attack.github.io/attack-navigator/). Includes 8-handle resizable modal UI with comprehensive debug logging.
+- `MitreLoader.ts` — Asynchronous dataset loader that parses STIX 2.1 bundle format directly from `MITRE/enterprise-attack.json`. Extracts tactics (`x-mitre-tactic` objects) and techniques (`attack-pattern` objects) with full validation. **Requires enterprise-attack.json** - throws error if unavailable. Implements caching. Exports `validateTechniqueTactic()` which performs severity-level validation (valid/unknown_technique/unknown_tactic/mismatch/empty_tactic). **Comprehensive abbreviation support** includes short forms like "EX" (Execution), "CA" (Credential Access), "DE" (Defense Evasion), etc. Includes step-by-step debug logging.
+- `RenderMitreModal.ts` — Full-screen modal displaying complete MITRE ATT&CK matrix (all 14 tactics as columns, all techniques from dataset). Aggregates IOC card MITRE tactic/technique fields and validates technique-tactic pairings with severity indicators (green=valid, orange=warning, red=error, gray=unfound). Features: expandable techniques with subtechniques, description truncation with expand/collapse, count badges for found techniques, **validation error categories** (Missing Tactic, Unknown Tactic, Technique Errors, Validation Mismatches), export to MITRE ATT&CK Navigator JSON format (importable at https://mitre-attack.github.io/attack-navigator/). Includes 8-handle resizable modal UI with comprehensive debug logging.
 
 **UI/Modals:**
 - `RenderTimelinesModal.ts` — Full-screen modal with **time-based timeline only** (link timeline removed). Renders chronological sorted cards by "Time of Event" field. Uses recursive rendering for tree structure.
@@ -52,14 +51,13 @@ The build outputs `main.js` directly in the project root (consumed by Obsidian).
 
 **MITRE Dataset:**
 - `MITRE/enterprise-attack.json` — Official MITRE ATT&CK STIX 2.1 bundle format (50MB+, ~800+ techniques). Downloaded directly from attack.mitre.org. MitreLoader parses this format natively — no preprocessing needed.
-- `scripts/parse-mitre-stix.js` — Legacy parser script (deprecated). The plugin now parses STIX 2.1 bundles directly via `parseStixBundle()` in MitreLoader.ts.
 
 ## Key Patterns
 
 - IOC card content is **markdown with embedded HTML** for the header. IOCParser detects IOC types by regex-matching type names (e.g., `/IP Address/i`) against node text content — pattern order matters (e.g., "File Hash" must match before "File").
 - **IOC card field format**: Cards are created with field labels followed by blank lines for user input. Users type values after the field labels. The parser extracts the **first field's value** as the primary "value" for timeline display (e.g., for Hostname cards, the "hostname" field is extracted; for File Hash cards, the "hash" field). No separators are included in the card template - the parser uses the next field label or "Time of Event:" as the delimiter.
-- **MITRE field parsing**: IOC cards include "Mitre Tactic: " and "Mitre Technique: " fields. IOCParser extracts these using flexible pattern matching. Technique field supports multiple formats: "T1566", "T1566.001", "T1566 - Phishing", "Phishing (T1566)", or plain name "Phishing". Tactic field supports display names or short names.
-- **MITRE validation architecture**: Uses severity levels instead of boolean - `valid` (green), `unknown_technique` (red), `unknown_tactic` (red), `mismatch` (orange, wrong tactic), `not_found` (gray, not in IOC cards). Validation messages include specific guidance for analysts.
+- **MITRE field parsing**: IOC cards include "Mitre Tactic: " and "Mitre Technique: " fields. IOCParser extracts these using flexible pattern matching with `[ \t]*` (spaces/tabs only, NOT `\s*`) to prevent regex from matching across newlines. Technique field supports multiple formats: "T1566", "T1566.001", "T1566 - Phishing", "Phishing (T1566)", or plain name "Phishing". Tactic field supports display names, short names, or abbreviations (e.g., "EX" for Execution, "CA" for Credential Access).
+- **MITRE validation architecture**: Uses severity levels instead of boolean - `valid` (green), `unknown_technique` (red), `unknown_tactic` (red), `mismatch` (orange, wrong tactic - shows correct tactics in error message), `empty_tactic` (red, technique filled but tactic empty), `not_found` (gray, not in IOC cards). Validation messages include specific guidance for analysts. Cards with empty technique are filtered out (can't validate without technique), but cards with empty tactic and filled technique show explicit "Tactic field is empty" error.
 - **Full MITRE matrix aggregation**: MITRE modal builds complete 14-tactic matrix showing ALL techniques from dataset (not just IOC-found). Found techniques are highlighted with validation colors and count badges. Unfound techniques appear gray for context. This provides complete attack surface coverage view.
 - **Description truncation**: MITRE technique descriptions are cleaned (removing markdown links and citation brackets) and truncated to ~180 characters in collapsed state. Clicking expands to show full description and subtechniques. Subtechniques always show full descriptions.
 - **MITRE Navigator export**: Generates JSON layer file compatible with official MITRE ATT&CK Navigator (https://mitre-attack.github.io/attack-navigator/). Includes severity-based coloring (green/orange/red), IOC card counts as technique scores, validation messages in comments, and proper tactic mapping.
@@ -85,9 +83,14 @@ The plugin includes comprehensive MITRE ATT&CK framework integration for threat 
 - Shows ALL techniques from dataset (~800+), highlighting only those found in IOC cards
 - **Color-coded validation**:
   - Green: Valid technique-tactic pairing
-  - Orange: Technique exists but wrong tactic specified
-  - Red: Unknown technique or tactic name
+  - Orange: Technique exists but wrong tactic specified (mismatch error shows correct tactics)
+  - Red: Unknown technique, unknown tactic name, or empty tactic field
   - Gray: Valid technique but not found in any IOC cards
+- **Validation error categories** (collapsible section at top):
+  - 🔴 **Missing Tactic**: Technique filled but tactic empty - shows "Tactic field is empty"
+  - 🔴 **Unknown Tactic**: Tactic abbreviation/name not recognized in dataset
+  - 🔴 **Technique Errors**: Technique ID not found in MITRE dataset
+  - ⚠️ **Validation Mismatches**: Both valid but don't belong together - shows correct tactics
 - **Interactive features**:
   - Click techniques with subtechniques (▶ icon) to expand/collapse
   - Descriptions truncated to ~180 chars in collapsed state, full text when expanded
@@ -107,14 +110,29 @@ The plugin includes comprehensive MITRE ATT&CK framework integration for threat 
 
 **Dataset Management:**
 - Full MITRE ATT&CK dataset stored in `MITRE/enterprise-attack.json` (official STIX 2.1 bundle format from attack.mitre.org)
-- Fallback to embedded curated techniques in `MitreData.ts` if JSON unavailable
+- **Required file** - plugin will fail with clear error message if missing
 - Update dataset: Download latest bundle from https://github.com/mitre-attack/attack-stix-data → save as `MITRE/enterprise-attack.json` → reload plugin (no conversion needed)
 
 **Validation Logic:**
 - Checks technique ID exists in dataset
 - Verifies technique belongs to specified tactic
-- Provides detailed error messages for mismatches
+- Provides detailed error messages for mismatches (includes correct tactics)
 - Handles subtechniques (T1566.001 format) with parent technique validation
+- **Comprehensive abbreviation support**:
+  - Reconnaissance: RECON, RECCE, R
+  - Resource Development: RESOURCE, RES, RD
+  - Initial Access: IA, INIT
+  - Execution: EXEC, EXE, EX, E
+  - Persistence: PERSIST, PERS, P
+  - Privilege Escalation: PRIV, PE, PRIVESC, PRIV ESC
+  - Defense Evasion: DEFENSE, DEF, DE
+  - Credential Access: CRED, CA, CRED ACCESS
+  - Discovery: DISC, DIS, D
+  - Lateral Movement: LATERAL, LM, LAT MOVE
+  - Collection: COLLECT, COL, C
+  - Command and Control: C2, CNC, CC
+  - Exfiltration: EXFIL, EXFILTRATE, E
+  - Impact: IMP, I
 
 ## Build Config
 
@@ -129,16 +147,12 @@ src/
 ├── TimeTimelineProcessing.ts    # Time-based timeline (107 lines) - chronological IOC sorting
 ├── RenderTimelinesModal.ts      # Timeline modal (145 lines) - time-based timeline UI only
 ├── RenderMitreModal.ts          # MITRE modal (848 lines) - full matrix visualization + Navigator export
-├── MitreData.ts                 # MITRE definitions (547 lines) - tactics, techniques, validation helpers
-├── MitreLoader.ts               # Dataset loader (335+ lines) - STIX 2.1 bundle parser with fallback
+├── MitreLoader.ts               # Dataset loader (335+ lines) - STIX 2.1 bundle parser
 ├── RenderIOCCards.ts            # Card generation (67 lines) - markdown template with MITRE fields
 ├── RenderIOCCardsModal.ts       # IOC selector (137 lines) - type picker grid
 ├── IOCCardsTypes.ts             # Type definitions (287 lines) - 16 IOC types with icons/colors
 ├── IOCCardFactory.ts            # CRUD helpers (78 lines) - IOC_TYPES manipulation
 └── PluginSettings.ts            # Settings tab (68 lines) - card size, timeline toggle
-
-scripts/
-└── parse-mitre-stix.js          # Legacy STIX parser (deprecated, no longer needed)
 
 MITRE/
 └── enterprise-attack.json       # Official STIX 2.1 bundle (50MB+, download from attack.mitre.org)

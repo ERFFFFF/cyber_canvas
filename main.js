@@ -419,25 +419,42 @@ function extractSplunkQuery(text) {
   return "";
 }
 function extractTactic(text) {
-  let match = text.match(/Mitre Tactic:\s*([^\n]+)/i);
+  let match = text.match(/Mitre Tactic:[ \t]*([^\n]*)/i);
   if (match && match[1] && match[1].trim()) {
-    return match[1].trim();
+    return match[1].trim().toUpperCase();
   }
-  match = text.match(/\*\*Mitre Tactic:\*\*\s*([^\n]+)/i) || text.match(/\*\*Mitre Tactic:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
-  if (match && match[1]) {
-    return match[1].trim();
+  match = text.match(/\*\*Mitre Tactic:\*\*[ \t]*([^\n]*)/i) || text.match(/\*\*Mitre Tactic:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
+  if (match && match[1] && match[1].trim()) {
+    return match[1].trim().toUpperCase();
   }
   return "";
 }
 function extractTechnique(text) {
-  let match = text.match(/Mitre Technique:\s*([^\n]+)/i);
+  let match = text.match(/Mitre Technique:[ \t]*([^\n]*)/i);
   if (match && match[1] && match[1].trim()) {
-    return match[1].trim();
+    return match[1].trim().toUpperCase();
   }
-  match = text.match(/\*\*Mitre Technique:\*\*\s*([^\n]+)/i) || text.match(/\*\*Mitre Technique:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
-  if (match && match[1]) {
-    return match[1].trim();
+  match = text.match(/\*\*Mitre Technique:\*\*[ \t]*([^\n]*)/i) || text.match(/\*\*Mitre Technique:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
+  if (match && match[1] && match[1].trim()) {
+    return match[1].trim().toUpperCase();
   }
+  return "";
+}
+function extractCardId(text) {
+  console.debug("[IOCParser] Extracting Card ID...");
+  const commentMatch = text.match(/<!-- IOC_CARD_ID:([^>]+) -->/);
+  if (commentMatch && commentMatch[1]) {
+    const cardId = commentMatch[1].trim();
+    console.debug("[IOCParser] Found Card ID in HTML comment:", cardId);
+    return cardId;
+  }
+  const cardIdMatch = text.match(/Card ID:\s*([^\n]+)/i);
+  if (cardIdMatch && cardIdMatch[1]) {
+    const cardId = cardIdMatch[1].trim();
+    console.debug("[IOCParser] Found Card ID in legacy field format:", cardId);
+    return cardId;
+  }
+  console.debug("[IOCParser] No Card ID found");
   return "";
 }
 function lookupTypeVisuals(iocType, fallbackColor) {
@@ -477,17 +494,20 @@ function parseIOCNode(node) {
   const splunkQuery = extractSplunkQuery(text);
   const tactic = extractTactic(text);
   const technique = extractTechnique(text);
+  const cardId = extractCardId(text);
   console.log("[IOCParser] parseIOCNode - All extracted fields:");
   console.log("  - value:", value || "**EMPTY**");
   console.log("  - time:", time || "(empty)");
   console.log("  - splunkQuery:", splunkQuery || "(empty)");
   console.log("  - tactic:", tactic || "(empty)");
   console.log("  - technique:", technique || "(empty)");
+  console.log("  - cardId:", cardId || "(empty)");
   const fallbackColor = node.color || "#333";
   const { icon, color } = lookupTypeVisuals(iocType, fallbackColor);
   console.log("[IOCParser] parseIOCNode - Looked up visuals - color:", color, "icon length:", icon.length);
   const result = {
     id: node.id,
+    cardId,
     type: iocType,
     value,
     time,
@@ -647,12 +667,14 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
       console.log("[TimeTimeline] Will display value?", !!(ioc.value && ioc.value.trim()));
       console.log("[TimeTimeline] IOC Time:", ioc.time);
       const timeEl = detailsContainer.createDiv("timeline-time");
+      timeEl.innerHTML = `\u{1F550} Time: ${ioc.time}`;
+      console.log("[TimeTimeline] Displaying time:", timeEl.innerHTML);
       if (ioc.value && ioc.value.trim()) {
-        timeEl.innerHTML = `\u{1F550} Time: ${ioc.time} - Value: ${ioc.value}`;
-        console.log("[TimeTimeline] \u2713 DISPLAYING combined time+value:", timeEl.innerHTML);
+        const valueEl = detailsContainer.createDiv("timeline-value");
+        valueEl.innerHTML = `\u{1F4CC} Value: ${ioc.value}`;
+        console.log("[TimeTimeline] \u2713 DISPLAYING value:", valueEl.innerHTML);
       } else {
-        timeEl.innerHTML = `\u{1F550} Time: ${ioc.time}`;
-        console.log("[TimeTimeline] \u2717 NO VALUE - showing time only");
+        console.log("[TimeTimeline] \u2717 NO VALUE to display");
         console.log("[TimeTimeline] Reason: value is", ioc.value === void 0 ? "undefined" : ioc.value === null ? "null" : ioc.value === "" ? "empty string" : "falsy after trim");
       }
       console.log("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
@@ -685,425 +707,6 @@ var RenderTimelinesModal = class extends import_obsidian.Modal {
 // src/RenderMitreModal.ts
 var import_obsidian2 = require("obsidian");
 
-// src/MitreData.ts
-var MITRE_TACTICS = {
-  "reconnaissance": {
-    id: "reconnaissance",
-    displayName: "Reconnaissance",
-    shortName: "reconnaissance",
-    tacticId: "TA0043",
-    abbreviations: ["RE", "RECON"]
-  },
-  "resourcedevelopment": {
-    id: "resourcedevelopment",
-    displayName: "Resource Development",
-    shortName: "resource-development",
-    tacticId: "TA0042",
-    abbreviations: ["RD", "RESDEV"]
-  },
-  "initialaccess": {
-    id: "initialaccess",
-    displayName: "Initial Access",
-    shortName: "initial-access",
-    tacticId: "TA0001",
-    abbreviations: ["IA"]
-  },
-  "execution": {
-    id: "execution",
-    displayName: "Execution",
-    shortName: "execution",
-    tacticId: "TA0002",
-    abbreviations: ["EX", "EXEC"]
-  },
-  "persistence": {
-    id: "persistence",
-    displayName: "Persistence",
-    shortName: "persistence",
-    tacticId: "TA0003",
-    abbreviations: ["PE", "PERS"]
-  },
-  "privilegeescalation": {
-    id: "privilegeescalation",
-    displayName: "Privilege Escalation",
-    shortName: "privilege-escalation",
-    tacticId: "TA0004",
-    abbreviations: ["PR", "PRIV"]
-  },
-  "defenseevasion": {
-    id: "defenseevasion",
-    displayName: "Defense Evasion",
-    shortName: "defense-evasion",
-    tacticId: "TA0005",
-    abbreviations: ["DE", "DEF"]
-  },
-  "credentialaccess": {
-    id: "credentialaccess",
-    displayName: "Credential Access",
-    shortName: "credential-access",
-    tacticId: "TA0006",
-    abbreviations: ["CA", "CRED"]
-  },
-  "discovery": {
-    id: "discovery",
-    displayName: "Discovery",
-    shortName: "discovery",
-    tacticId: "TA0007",
-    abbreviations: ["DI", "DISC"]
-  },
-  "lateralmovement": {
-    id: "lateralmovement",
-    displayName: "Lateral Movement",
-    shortName: "lateral-movement",
-    tacticId: "TA0008",
-    abbreviations: ["LA", "LAT"]
-  },
-  "collection": {
-    id: "collection",
-    displayName: "Collection",
-    shortName: "collection",
-    tacticId: "TA0009",
-    abbreviations: ["CO", "COLL"]
-  },
-  "commandandcontrol": {
-    id: "commandandcontrol",
-    displayName: "Command and Control",
-    shortName: "command-and-control",
-    tacticId: "TA0011",
-    abbreviations: ["CC", "C2"]
-  },
-  "exfiltration": {
-    id: "exfiltration",
-    displayName: "Exfiltration",
-    shortName: "exfiltration",
-    tacticId: "TA0010",
-    abbreviations: ["EF", "EXFIL"]
-  },
-  "impact": {
-    id: "impact",
-    displayName: "Impact",
-    shortName: "impact",
-    tacticId: "TA0040",
-    abbreviations: ["IM", "IMP"]
-  }
-};
-var MITRE_TECHNIQUES = {
-  "T1566": {
-    id: "T1566",
-    name: "Phishing",
-    tactics: ["initialaccess"],
-    subtechniques: ["T1566.001", "T1566.002", "T1566.003", "T1566.004"],
-    description: "Adversaries may send phishing messages to gain access to victim systems."
-  },
-  "T1566.001": {
-    id: "T1566.001",
-    name: "Spearphishing Attachment",
-    tactics: ["initialaccess"],
-    description: "Adversaries may send spearphishing emails with a malicious attachment."
-  },
-  "T1566.002": {
-    id: "T1566.002",
-    name: "Spearphishing Link",
-    tactics: ["initialaccess"],
-    description: "Adversaries may send spearphishing emails with a malicious link."
-  },
-  "T1566.003": {
-    id: "T1566.003",
-    name: "Spearphishing via Service",
-    tactics: ["initialaccess"],
-    description: "Adversaries may send spearphishing messages via third-party services."
-  },
-  "T1566.004": {
-    id: "T1566.004",
-    name: "Spearphishing Voice",
-    tactics: ["initialaccess"],
-    description: "Adversaries may use voice communications to ultimately gain access."
-  },
-  "T1059": {
-    id: "T1059",
-    name: "Command and Scripting Interpreter",
-    tactics: ["execution"],
-    subtechniques: ["T1059.001", "T1059.003", "T1059.005", "T1059.007"],
-    description: "Adversaries may abuse command and script interpreters to execute commands or scripts."
-  },
-  "T1059.001": {
-    id: "T1059.001",
-    name: "PowerShell",
-    tactics: ["execution"],
-    description: "Adversaries may abuse PowerShell commands and scripts for execution."
-  },
-  "T1059.003": {
-    id: "T1059.003",
-    name: "Windows Command Shell",
-    tactics: ["execution"],
-    description: "Adversaries may abuse cmd.exe to execute commands and payloads."
-  },
-  "T1059.005": {
-    id: "T1059.005",
-    name: "Visual Basic",
-    tactics: ["execution"],
-    description: "Adversaries may abuse Visual Basic (VB) for execution."
-  },
-  "T1059.007": {
-    id: "T1059.007",
-    name: "JavaScript",
-    tactics: ["execution"],
-    description: "Adversaries may abuse JavaScript for execution of malicious scripts."
-  },
-  "T1078": {
-    id: "T1078",
-    name: "Valid Accounts",
-    tactics: ["persistence", "privilegeescalation", "defenseevasion", "initialaccess"],
-    subtechniques: ["T1078.001", "T1078.002", "T1078.003", "T1078.004"],
-    description: "Adversaries may obtain and abuse credentials of existing accounts."
-  },
-  "T1078.001": {
-    id: "T1078.001",
-    name: "Default Accounts",
-    tactics: ["persistence", "privilegeescalation", "defenseevasion", "initialaccess"],
-    description: "Adversaries may obtain and abuse credentials of a default account."
-  },
-  "T1078.002": {
-    id: "T1078.002",
-    name: "Domain Accounts",
-    tactics: ["persistence", "privilegeescalation", "defenseevasion", "initialaccess"],
-    description: "Adversaries may obtain and abuse credentials of domain accounts."
-  },
-  "T1078.003": {
-    id: "T1078.003",
-    name: "Local Accounts",
-    tactics: ["persistence", "privilegeescalation", "defenseevasion", "initialaccess"],
-    description: "Adversaries may obtain and abuse credentials of local accounts."
-  },
-  "T1078.004": {
-    id: "T1078.004",
-    name: "Cloud Accounts",
-    tactics: ["persistence", "privilegeescalation", "defenseevasion", "initialaccess"],
-    description: "Adversaries may obtain and abuse credentials of cloud accounts."
-  },
-  "T1547": {
-    id: "T1547",
-    name: "Boot or Logon Autostart Execution",
-    tactics: ["persistence", "privilegeescalation"],
-    subtechniques: ["T1547.001", "T1547.004", "T1547.009"],
-    description: "Adversaries may configure system settings to automatically execute at boot or logon."
-  },
-  "T1547.001": {
-    id: "T1547.001",
-    name: "Registry Run Keys / Startup Folder",
-    tactics: ["persistence", "privilegeescalation"],
-    description: "Adversaries may achieve persistence by adding a program to a startup folder or registry run keys."
-  },
-  "T1547.004": {
-    id: "T1547.004",
-    name: "Winlogon Helper DLL",
-    tactics: ["persistence", "privilegeescalation"],
-    description: "Adversaries may abuse Winlogon helper DLLs to establish persistence and elevate privileges."
-  },
-  "T1053": {
-    id: "T1053",
-    name: "Scheduled Task/Job",
-    tactics: ["execution", "persistence", "privilegeescalation"],
-    subtechniques: ["T1053.002", "T1053.005"],
-    description: "Adversaries may abuse task scheduling functionality to execute code."
-  },
-  "T1053.002": {
-    id: "T1053.002",
-    name: "At",
-    tactics: ["execution", "persistence", "privilegeescalation"],
-    description: "Adversaries may abuse the at utility to perform task scheduling for initial execution."
-  },
-  "T1053.005": {
-    id: "T1053.005",
-    name: "Scheduled Task",
-    tactics: ["execution", "persistence", "privilegeescalation"],
-    description: "Adversaries may abuse Windows Task Scheduler to perform task scheduling."
-  },
-  "T1055": {
-    id: "T1055",
-    name: "Process Injection",
-    tactics: ["defenseevasion", "privilegeescalation"],
-    subtechniques: ["T1055.001", "T1055.002", "T1055.012"],
-    description: "Adversaries may inject code into processes to evade defenses and elevate privileges."
-  },
-  "T1055.001": {
-    id: "T1055.001",
-    name: "Dynamic-link Library Injection",
-    tactics: ["defenseevasion", "privilegeescalation"],
-    description: "Adversaries may inject DLLs into processes to execute malicious payloads."
-  },
-  "T1055.002": {
-    id: "T1055.002",
-    name: "Portable Executable Injection",
-    tactics: ["defenseevasion", "privilegeescalation"],
-    description: "Adversaries may inject PE files into processes to execute malicious code."
-  },
-  "T1055.012": {
-    id: "T1055.012",
-    name: "Process Hollowing",
-    tactics: ["defenseevasion", "privilegeescalation"],
-    description: "Adversaries may inject code into suspended and hollowed processes."
-  },
-  "T1027": {
-    id: "T1027",
-    name: "Obfuscated Files or Information",
-    tactics: ["defenseevasion"],
-    subtechniques: ["T1027.002", "T1027.010"],
-    description: "Adversaries may obfuscate files or information to evade detection."
-  },
-  "T1027.002": {
-    id: "T1027.002",
-    name: "Software Packing",
-    tactics: ["defenseevasion"],
-    description: "Adversaries may pack malicious code to evade static analysis."
-  },
-  "T1027.010": {
-    id: "T1027.010",
-    name: "Command Obfuscation",
-    tactics: ["defenseevasion"],
-    description: "Adversaries may obfuscate commands to make detection more difficult."
-  },
-  "T1003": {
-    id: "T1003",
-    name: "OS Credential Dumping",
-    tactics: ["credentialaccess"],
-    subtechniques: ["T1003.001", "T1003.002", "T1003.003"],
-    description: "Adversaries may attempt to dump credentials to obtain account login information."
-  },
-  "T1003.001": {
-    id: "T1003.001",
-    name: "LSASS Memory",
-    tactics: ["credentialaccess"],
-    description: "Adversaries may attempt to access credential material stored in LSASS memory."
-  },
-  "T1003.002": {
-    id: "T1003.002",
-    name: "Security Account Manager",
-    tactics: ["credentialaccess"],
-    description: "Adversaries may attempt to extract credential material from the SAM database."
-  },
-  "T1003.003": {
-    id: "T1003.003",
-    name: "NTDS",
-    tactics: ["credentialaccess"],
-    description: "Adversaries may attempt to access NTDS.dit to retrieve password hashes."
-  },
-  "T1082": {
-    id: "T1082",
-    name: "System Information Discovery",
-    tactics: ["discovery"],
-    description: "An adversary may attempt to get detailed information about the operating system and hardware."
-  },
-  "T1083": {
-    id: "T1083",
-    name: "File and Directory Discovery",
-    tactics: ["discovery"],
-    description: "Adversaries may enumerate files and directories to find information."
-  },
-  "T1057": {
-    id: "T1057",
-    name: "Process Discovery",
-    tactics: ["discovery"],
-    description: "Adversaries may attempt to get information about running processes on a system."
-  },
-  "T1087": {
-    id: "T1087",
-    name: "Account Discovery",
-    tactics: ["discovery"],
-    subtechniques: ["T1087.001", "T1087.002"],
-    description: "Adversaries may attempt to get a listing of accounts on a system or domain."
-  },
-  "T1087.001": {
-    id: "T1087.001",
-    name: "Local Account",
-    tactics: ["discovery"],
-    description: "Adversaries may attempt to get a listing of local system accounts."
-  },
-  "T1087.002": {
-    id: "T1087.002",
-    name: "Domain Account",
-    tactics: ["discovery"],
-    description: "Adversaries may attempt to get a listing of domain accounts."
-  },
-  "T1021": {
-    id: "T1021",
-    name: "Remote Services",
-    tactics: ["lateralmovement"],
-    subtechniques: ["T1021.001", "T1021.002", "T1021.006"],
-    description: "Adversaries may use valid accounts to log into remote services."
-  },
-  "T1021.001": {
-    id: "T1021.001",
-    name: "Remote Desktop Protocol",
-    tactics: ["lateralmovement"],
-    description: "Adversaries may use RDP to log into a system."
-  },
-  "T1021.002": {
-    id: "T1021.002",
-    name: "SMB/Windows Admin Shares",
-    tactics: ["lateralmovement"],
-    description: "Adversaries may use SMB shares to laterally move to a remote system."
-  },
-  "T1021.006": {
-    id: "T1021.006",
-    name: "Windows Remote Management",
-    tactics: ["lateralmovement"],
-    description: "Adversaries may use WinRM to execute commands on remote systems."
-  },
-  "T1048": {
-    id: "T1048",
-    name: "Exfiltration Over Alternative Protocol",
-    tactics: ["exfiltration"],
-    subtechniques: ["T1048.003"],
-    description: "Adversaries may steal data by exfiltrating it over a different protocol than the command channel."
-  },
-  "T1048.003": {
-    id: "T1048.003",
-    name: "Exfiltration Over Unencrypted Non-C2 Protocol",
-    tactics: ["exfiltration"],
-    description: "Adversaries may steal data by exfiltrating it over an unencrypted protocol."
-  },
-  "T1486": {
-    id: "T1486",
-    name: "Data Encrypted for Impact",
-    tactics: ["impact"],
-    description: "Adversaries may encrypt data on target systems to interrupt availability."
-  },
-  "T1489": {
-    id: "T1489",
-    name: "Service Stop",
-    tactics: ["impact"],
-    description: "Adversaries may stop or disable services on a system to render components unavailable."
-  },
-  "T1071": {
-    id: "T1071",
-    name: "Application Layer Protocol",
-    tactics: ["commandandcontrol"],
-    subtechniques: ["T1071.001", "T1071.004"],
-    description: "Adversaries may communicate using OSI application layer protocols."
-  },
-  "T1071.001": {
-    id: "T1071.001",
-    name: "Web Protocols",
-    tactics: ["commandandcontrol"],
-    description: "Adversaries may communicate using HTTP/HTTPS protocols."
-  },
-  "T1071.004": {
-    id: "T1071.004",
-    name: "DNS",
-    tactics: ["commandandcontrol"],
-    description: "Adversaries may communicate using DNS application layer protocol."
-  },
-  "T1105": {
-    id: "T1105",
-    name: "Ingress Tool Transfer",
-    tactics: ["commandandcontrol"],
-    description: "Adversaries may transfer tools or files from an external system."
-  }
-};
-function getTechniqueInfo(techniqueId) {
-  return MITRE_TECHNIQUES[techniqueId] || null;
-}
-
 // src/MitreLoader.ts
 var cachedDataset = null;
 async function loadMitreDataset(app) {
@@ -1131,15 +734,18 @@ async function loadMitreDataset(app) {
         console.warn("[MitreLoader] Unknown JSON format");
       }
     } else {
-      console.warn("[MitreLoader] JSON file not found at:", jsonPath);
+      console.error("[MitreLoader] JSON file not found at:", jsonPath);
+      throw new Error(
+        "MITRE ATT&CK dataset not found. Please ensure enterprise-attack.json exists in the MITRE folder. Download from: https://github.com/mitre-attack/attack-stix-data"
+      );
     }
   } catch (err) {
-    console.warn("[MitreLoader] Failed to load JSON:", err);
+    console.error("[MitreLoader] Failed to load MITRE dataset:", err);
+    throw new Error(
+      "MITRE ATT&CK dataset not found. Please ensure enterprise-attack.json exists in the MITRE folder. Download from: https://github.com/mitre-attack/attack-stix-data"
+    );
   }
-  console.log("[MitreLoader] Using embedded fallback data");
-  cachedDataset = convertEmbeddedToDataset(MITRE_TACTICS, MITRE_TECHNIQUES);
-  console.log("[MitreLoader] \u2713 Embedded data loaded. Techniques:", Object.keys(cachedDataset.techniques).length);
-  return cachedDataset;
+  throw new Error("MITRE ATT&CK dataset could not be loaded");
 }
 function parseStixBundle(stixBundle) {
   var _a, _b, _c, _d, _e, _f, _g, _h;
@@ -1220,58 +826,25 @@ function generateAbbreviations(tacticName) {
     abbrevs.push(words.map((w) => w[0]).join("").toUpperCase());
   }
   const commonAbbrevs = {
-    "Reconnaissance": ["RECON"],
-    "Resource Development": ["RESOURCE", "RES"],
-    "Initial Access": ["IA"],
-    "Execution": ["EXEC", "EXE"],
-    "Persistence": ["PERSIST", "PERS"],
-    "Privilege Escalation": ["PRIV", "PE"],
-    "Defense Evasion": ["DEFENSE", "DEF"],
-    "Credential Access": ["CRED"],
-    "Discovery": ["DISC"],
-    "Lateral Movement": ["LATERAL", "LM"],
-    "Collection": ["COLLECT", "COL"],
-    "Command and Control": ["C2", "CNC"],
-    "Exfiltration": ["EXFIL"],
-    "Impact": ["IMP"]
+    "Reconnaissance": ["RECON", "RECCE", "RE"],
+    "Resource Development": ["RESOURCE", "RES", "RD"],
+    "Initial Access": ["IA", "INIT"],
+    "Execution": ["EXEC", "EXE", "EX"],
+    "Persistence": ["PERSIST", "PERS", "PS"],
+    "Privilege Escalation": ["PRIV", "PE", "PRIVESC", "PRIV ESC"],
+    "Defense Evasion": ["DEFENSE", "DEF", "DE"],
+    "Credential Access": ["CRED", "CA", "CRED ACCESS"],
+    "Discovery": ["DISC", "DIS", "DI"],
+    "Lateral Movement": ["LATERAL", "LM", "LAT MOVE"],
+    "Collection": ["COLLECT", "COL", "CO"],
+    "Command and Control": ["C2", "CNC", "CC"],
+    "Exfiltration": ["EXFIL", "EXFILTRATE", "EX"],
+    "Impact": ["IMP", "IM"]
   };
   if (commonAbbrevs[tacticName]) {
     abbrevs.push(...commonAbbrevs[tacticName]);
   }
   return abbrevs;
-}
-function convertEmbeddedToDataset(oldTactics, oldTechniques) {
-  console.debug("[MitreLoader] Converting embedded data to dataset format");
-  const tactics = {};
-  const techniques = {};
-  Object.values(oldTactics).forEach((tactic) => {
-    tactics[tactic.tacticId] = {
-      id: tactic.tacticId,
-      name: tactic.displayName,
-      short_name: tactic.shortName,
-      description: `The adversary is trying to ${tactic.displayName.toLowerCase()}.`,
-      abbreviations: tactic.abbreviations || []
-    };
-  });
-  Object.values(oldTechniques).forEach((technique) => {
-    const tacticIds = technique.tactics.map((normalizedId) => {
-      const tactic = oldTactics[normalizedId];
-      return tactic ? tactic.tacticId : normalizedId;
-    });
-    techniques[technique.id] = {
-      id: technique.id,
-      name: technique.name,
-      description: technique.description || `Technique: ${technique.name}`,
-      tactics: tacticIds,
-      url: `https://attack.mitre.org/techniques/${technique.id.replace(".", "/")}`
-    };
-  });
-  return {
-    version: "embedded",
-    last_updated: new Date().toISOString().split("T")[0],
-    tactics,
-    techniques
-  };
 }
 function normalizeTacticName(name, dataset) {
   const normalized = name.toLowerCase().replace(/[\s\-_]+/g, "");
@@ -1341,6 +914,10 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
     this.searchBar = null;
     this.searchClearButton = null;
     this.searchMatchCount = null;
+    this.validationErrors = [];
+    // Truncation limits
+    this.TECHNIQUE_TRUNCATE_LIMIT = 180;
+    this.SUBTECHNIQUE_TRUNCATE_LIMIT = 100;
     this.plugin = plugin;
     this.timeProcessor = new TimeTimelineProcessor(app, plugin, IOC_TYPES);
     this.loadDataset();
@@ -1435,6 +1012,50 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
     }
   }
   /**
+   * Toggle subtechnique expansion (expand/collapse).
+   * Handles description swap for individual subtechniques.
+   *
+   * @param subItem - The subtechnique DOM element
+   * @param subtechnique - The subtechnique data object
+   */
+  toggleSubtechniqueExpansion(subItem, subtechnique) {
+    var _a, _b;
+    const isCollapsed = subItem.hasClass("collapsed");
+    const expandIcon = subItem.querySelector(".mitre-expand-icon");
+    const descEl = subItem.querySelector(".mitre-technique-description");
+    if (isCollapsed) {
+      subItem.removeClass("collapsed");
+      subItem.addClass("expanded");
+      subItem.setAttribute("data-is-expanded", "true");
+      if (expandIcon)
+        expandIcon.setText("\u25BC");
+      if (descEl) {
+        const fullDesc = subItem.getAttribute("data-full-description");
+        if (fullDesc) {
+          descEl.textContent = fullDesc;
+          if ((_a = this.currentSearchState) == null ? void 0 : _a.isActive) {
+            this.highlightMatches(descEl, fullDesc, this.currentSearchState);
+          }
+        }
+      }
+    } else {
+      subItem.removeClass("expanded");
+      subItem.addClass("collapsed");
+      subItem.setAttribute("data-is-expanded", "false");
+      if (expandIcon)
+        expandIcon.setText("\u25B6");
+      if (descEl) {
+        const truncatedDesc = subItem.getAttribute("data-truncated-description");
+        if (truncatedDesc) {
+          descEl.textContent = truncatedDesc;
+          if ((_b = this.currentSearchState) == null ? void 0 : _b.isActive) {
+            this.highlightMatches(descEl, truncatedDesc, this.currentSearchState);
+          }
+        }
+      }
+    }
+  }
+  /**
    * Load MITRE dataset asynchronously
    */
   async loadDataset() {
@@ -1443,6 +1064,7 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       console.debug("[MitreModal] Dataset loaded:", this.mitreDataset.version, "- Techniques:", Object.keys(this.mitreDataset.techniques).length);
     } catch (err) {
       console.error("[MitreModal] Failed to load dataset:", err);
+      this.mitreDataset = null;
     }
   }
   onOpen() {
@@ -1566,6 +1188,20 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
     const tactics = await this.aggregateTacticsTechniques(iocData);
     console.debug("[MitreModal] ===== AGGREGATION COMPLETE =====");
     console.debug("[MitreModal] Tactics:", tactics.length);
+    if (!this.mitreDataset) {
+      container.createEl("div", {
+        cls: "mitre-error-message",
+        text: "\u274C MITRE ATT&CK dataset could not be loaded."
+      });
+      container.createEl("p", {
+        text: "Please ensure enterprise-attack.json exists in the MITRE folder."
+      });
+      container.createEl("a", {
+        text: "Download dataset from MITRE",
+        attr: { href: "https://github.com/mitre-attack/attack-stix-data", target: "_blank" }
+      });
+      return;
+    }
     if (tactics.length === 0) {
       container.createEl("p", {
         text: 'No MITRE tactics or techniques found in IOC cards. Add "Mitre Tactic" and "Mitre Technique" fields to your cards.',
@@ -1590,42 +1226,229 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       cls: "mitre-stat-item"
     });
     this.currentTactics = tactics;
+    this.renderValidationErrors(container);
     tactics.forEach((tactic) => {
       this.renderTacticSection(container, tactic, this.currentSearchState);
     });
   }
+  /**
+   * Render validation errors section with card references.
+   * Groups errors by type (Tactic Errors, Technique Errors, Validation Mismatches).
+   *
+   * @param container - Container element for error section
+   */
+  renderValidationErrors(container) {
+    if (this.validationErrors.length === 0) {
+      return;
+    }
+    console.debug("[MitreModal] Rendering", this.validationErrors.length, "validation errors");
+    const emptyTacticErrors = this.validationErrors.filter((e) => e.severity === "empty_tactic");
+    const tacticErrors = this.validationErrors.filter((e) => e.severity === "unknown_tactic");
+    const techniqueErrors = this.validationErrors.filter((e) => e.severity === "unknown_technique");
+    const mismatchErrors = this.validationErrors.filter((e) => e.severity === "mismatch");
+    const errorSection = container.createDiv("mitre-validation-errors");
+    const header = errorSection.createDiv("mitre-errors-header");
+    header.createEl("h3", {
+      text: `\u26A0\uFE0F Validation Issues (${this.validationErrors.length})`
+    });
+    const toggleBtn = header.createEl("button", {
+      text: "Hide",
+      cls: "mitre-errors-toggle"
+    });
+    const errorsList = errorSection.createDiv("mitre-errors-list");
+    errorSection.addClass("expanded");
+    toggleBtn.addEventListener("click", () => {
+      if (errorSection.hasClass("expanded")) {
+        errorSection.removeClass("expanded");
+        errorSection.addClass("collapsed");
+        toggleBtn.setText("Show");
+        errorsList.style.display = "none";
+      } else {
+        errorSection.removeClass("collapsed");
+        errorSection.addClass("expanded");
+        toggleBtn.setText("Hide");
+        errorsList.style.display = "block";
+      }
+    });
+    if (emptyTacticErrors.length > 0) {
+      this.renderErrorCategory(errorsList, "Missing Tactic", emptyTacticErrors, "\u{1F534}");
+    }
+    if (tacticErrors.length > 0) {
+      this.renderErrorCategory(errorsList, "Unknown Tactic", tacticErrors, "\u{1F534}");
+    }
+    if (techniqueErrors.length > 0) {
+      this.renderErrorCategory(errorsList, "Technique Errors", techniqueErrors, "\u{1F534}");
+    }
+    if (mismatchErrors.length > 0) {
+      this.renderErrorCategory(errorsList, "Validation Mismatches", mismatchErrors, "\u26A0\uFE0F");
+    }
+  }
+  /**
+   * Render a category of validation errors with header and items.
+   *
+   * @param container - Parent container element
+   * @param categoryTitle - Display title for this error category
+   * @param errors - Array of errors in this category
+   * @param icon - Icon to use for this category
+   */
+  renderErrorCategory(container, categoryTitle, errors, icon) {
+    const categorySection = container.createDiv("mitre-error-category");
+    const categoryHeader = categorySection.createDiv("mitre-error-category-header");
+    categoryHeader.createEl("h4", {
+      text: `${icon} ${categoryTitle} (${errors.length})`
+    });
+    errors.forEach((error) => {
+      const errorItem = categorySection.createDiv("mitre-error-item");
+      if (error.severity === "unknown_technique" || error.severity === "unknown_tactic" || error.severity === "empty_tactic") {
+        errorItem.addClass("mitre-error-critical");
+      } else if (error.severity === "mismatch") {
+        errorItem.addClass("mitre-error-warning");
+      }
+      const errorHeader = errorItem.createDiv("mitre-error-header");
+      errorHeader.createEl("span", {
+        text: error.techniqueId,
+        cls: "mitre-error-technique-id"
+      });
+      errorHeader.createEl("span", {
+        text: error.techniqueName,
+        cls: "mitre-error-technique-name"
+      });
+      errorItem.createDiv({
+        text: error.message,
+        cls: "mitre-error-message"
+      });
+      const cardsSection = errorItem.createDiv("mitre-error-cards");
+      cardsSection.createEl("span", {
+        text: "Affected cards: ",
+        cls: "mitre-error-cards-label"
+      });
+      error.iocCards.forEach((card, index) => {
+        const cardBadge = cardsSection.createEl("span", {
+          cls: "mitre-error-card-badge",
+          attr: { "title": `Node ID: ${card.nodeId}` }
+        });
+        cardBadge.createEl("span", {
+          text: card.iocType,
+          cls: "mitre-error-card-type"
+        });
+        cardBadge.createEl("span", {
+          text: ` ${card.cardId}`,
+          cls: "mitre-error-card-id"
+        });
+        if (index < error.iocCards.length - 1) {
+          cardsSection.createEl("span", { text: ", " });
+        }
+      });
+    });
+  }
+  /**
+   * Determines if newSeverity should override existingSeverity when aggregating.
+   * Priority: unknown_technique > unknown_tactic > empty_tactic > mismatch > valid
+   */
+  shouldOverrideSeverity(newSeverity, existingSeverity) {
+    const severityRank = {
+      "unknown_technique": 5,
+      "unknown_tactic": 4,
+      "empty_tactic": 3,
+      "mismatch": 2,
+      "valid": 1
+    };
+    return severityRank[newSeverity] > severityRank[existingSeverity];
+  }
   async aggregateTacticsTechniques(iocData) {
     if (!this.mitreDataset) {
       await this.loadDataset();
-      if (!this.mitreDataset) {
-        console.error("[MitreModal] Failed to load dataset");
-        return [];
-      }
+    }
+    if (!this.mitreDataset) {
+      console.error("[MitreModal] Failed to load dataset");
+      return [];
     }
     console.log("[MitreModal] Starting full matrix aggregation with", iocData.length, "IOC cards");
     console.log("[MitreModal] Dataset has", Object.keys(this.mitreDataset.techniques).length, "techniques");
     const foundTechniques = /* @__PURE__ */ new Map();
+    const cardValidations = /* @__PURE__ */ new Map();
     iocData.forEach((ioc) => {
-      if (!ioc.tactic || !ioc.technique) {
+      const rawTactic = (ioc.tactic || "").trim();
+      const rawTechnique = (ioc.technique || "").trim();
+      if (!rawTechnique) {
+        console.debug("[MitreModal] Skipping IOC card with empty technique:", {
+          id: ioc.id,
+          cardId: ioc.cardId || "(no ID)",
+          type: ioc.type,
+          hasTactic: !!rawTactic,
+          hasTechnique: false,
+          tacticValue: rawTactic || "(empty)",
+          techniqueValue: "(empty)"
+        });
         return;
       }
-      const tactic = ioc.tactic.trim();
-      const technique = ioc.technique.trim();
-      if (!tactic || !technique)
-        return;
+      const technique = rawTechnique;
       const techniqueId = this.extractTechniqueId(technique);
       const techniqueName = this.extractTechniqueName(technique);
+      if (!rawTactic) {
+        console.debug("[MitreModal] Found IOC card with empty tactic:", {
+          id: ioc.id,
+          cardId: ioc.cardId || "(no ID)",
+          type: ioc.type,
+          techniqueId,
+          technique
+        });
+        const validation2 = {
+          severity: "empty_tactic",
+          message: "Tactic field is empty",
+          tacticId: void 0
+        };
+        cardValidations.set(ioc.id, {
+          cardId: ioc.cardId || ioc.id,
+          techniqueId,
+          techniqueName,
+          tactic: "(empty)",
+          severity: validation2.severity,
+          validationMessage: validation2.message,
+          iocType: ioc.type,
+          nodeId: ioc.id
+        });
+        if (foundTechniques.has(techniqueId)) {
+          const existing = foundTechniques.get(techniqueId);
+          existing.count++;
+          existing.iocCards.push(ioc.id);
+          if (this.shouldOverrideSeverity(validation2.severity, existing.severity)) {
+            existing.severity = validation2.severity;
+            existing.validationMessage = validation2.message;
+          }
+        } else {
+          foundTechniques.set(techniqueId, {
+            count: 1,
+            iocCards: [ioc.id],
+            severity: validation2.severity,
+            validationMessage: validation2.message,
+            userProvidedTactic: "(empty)"
+          });
+        }
+        return;
+      }
+      const tactic = rawTactic;
       const validation = validateTechniqueTactic(techniqueId, tactic, this.mitreDataset);
       console.debug("[MitreModal] Found technique:", {
         techniqueId,
         tactic,
         severity: validation.severity
       });
+      cardValidations.set(ioc.id, {
+        cardId: ioc.cardId || ioc.id,
+        techniqueId,
+        techniqueName,
+        tactic,
+        severity: validation.severity,
+        validationMessage: validation.message,
+        iocType: ioc.type,
+        nodeId: ioc.id
+      });
       if (foundTechniques.has(techniqueId)) {
         const existing = foundTechniques.get(techniqueId);
         existing.count++;
         existing.iocCards.push(ioc.id);
-        if (validation.severity === "unknown_technique" || validation.severity === "unknown_tactic" || validation.severity === "mismatch" && existing.severity === "valid") {
+        if (this.shouldOverrideSeverity(validation.severity, existing.severity)) {
           existing.severity = validation.severity;
           existing.validationMessage = validation.message;
         }
@@ -1744,6 +1567,39 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       totalTechniques: tactics.reduce((sum, t) => sum + t.techniques.length, 0),
       foundTechniques: foundTechniques.size
     });
+    console.log("[MitreModal] Collecting validation errors from card-level validation...");
+    this.validationErrors = [];
+    const errorsByTechnique = /* @__PURE__ */ new Map();
+    cardValidations.forEach((cardValidation, cardId) => {
+      if (cardValidation.severity !== "valid") {
+        const key = `${cardValidation.techniqueId}-${cardValidation.severity}`;
+        if (!errorsByTechnique.has(key)) {
+          errorsByTechnique.set(key, {
+            techniqueId: cardValidation.techniqueId,
+            techniqueName: cardValidation.techniqueName,
+            severity: cardValidation.severity,
+            message: cardValidation.validationMessage || "Validation error",
+            cards: []
+          });
+        }
+        errorsByTechnique.get(key).cards.push({
+          cardId: cardValidation.cardId,
+          iocType: cardValidation.iocType,
+          nodeId: cardValidation.nodeId
+        });
+      }
+    });
+    errorsByTechnique.forEach((errorData) => {
+      this.validationErrors.push({
+        techniqueId: errorData.techniqueId,
+        techniqueName: errorData.techniqueName,
+        severity: errorData.severity,
+        message: errorData.message,
+        iocCards: errorData.cards
+      });
+    });
+    console.log("[MitreModal] Found", this.validationErrors.length, "validation error groups from", cardValidations.size, "cards");
+    console.log("[MitreModal] Cards with errors:", Array.from(cardValidations.values()).filter((v) => v.severity !== "valid").length);
     return tactics;
   }
   /**
@@ -1756,12 +1612,15 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
    * - "Phishing (T1566)" -> "T1566"
    * - "T1566.001 - Spearphishing Attachment" -> "T1566.001"
    * - "Phishing" (name only) -> "Phishing" (fallback, will fail validation)
+   *
+   * NOTE: Technique field is already uppercased by IOCParser for consistency
    */
   extractTechniqueId(technique) {
-    const idMatch = technique.match(/T\d{4}(?:\.\d{3})?/);
+    const idMatch = technique.match(/T\d{4}(?:\.\d{3})?/i);
     if (idMatch) {
-      console.debug("[MitreModal] Extracted technique ID:", idMatch[0], "from:", technique);
-      return idMatch[0];
+      const techniqueId = idMatch[0].toUpperCase();
+      console.debug("[MitreModal] Extracted technique ID:", techniqueId, "from:", technique);
+      return techniqueId;
     }
     console.debug("[MitreModal] No technique ID found in:", technique, "- using raw string");
     return technique.trim();
@@ -1790,11 +1649,11 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       return name;
     }
     const idOnlyMatch = technique.match(/^T\d{4}(?:\.\d{3})?$/);
-    if (idOnlyMatch) {
-      const info = getTechniqueInfo(idOnlyMatch[0]);
-      if (info) {
-        console.debug("[MitreModal] Looked up name for ID:", idOnlyMatch[0], "->", info.name);
-        return info.name;
+    if (idOnlyMatch && this.mitreDataset) {
+      const techData = this.mitreDataset.techniques[idOnlyMatch[0]];
+      if (techData) {
+        console.debug("[MitreModal] Looked up name for ID:", idOnlyMatch[0], "->", techData.name);
+        return techData.name;
       }
     }
     console.debug("[MitreModal] Using raw technique string as name:", technique);
@@ -1829,7 +1688,7 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       if (!technique.isFound) {
         techItem.addClass("mitre-technique-unfound");
       } else {
-        if (technique.severity === "unknown_technique" || technique.severity === "unknown_tactic") {
+        if (technique.severity === "unknown_technique" || technique.severity === "unknown_tactic" || technique.severity === "empty_tactic") {
           techItem.addClass("mitre-technique-error");
         } else if (technique.severity === "mismatch") {
           techItem.addClass("mitre-technique-warning");
@@ -1849,11 +1708,10 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
         });
       }
       if (technique.isFound && technique.severity !== "valid" && technique.severity !== "not_found") {
-        const icon = technique.severity === "unknown_technique" || technique.severity === "unknown_tactic" ? "\u{1F534}" : "\u26A0\uFE0F";
+        const icon = technique.severity === "unknown_technique" || technique.severity === "unknown_tactic" || technique.severity === "empty_tactic" ? "\u{1F534}" : "\u26A0\uFE0F";
         const warningEl = techInfo.createEl("span", {
           cls: "mitre-validation-icon",
           attr: {
-            "aria-label": technique.validationMessage || "Warning",
             "title": technique.validationMessage || "Warning"
           }
         });
@@ -1895,22 +1753,41 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
     const container = parentEl.createDiv({ cls: "mitre-subtechniques-container" });
     subtechniques.forEach((subtech) => {
       const subItem = container.createDiv("mitre-technique-item mitre-subtechnique");
+      const cleanedDesc = this.cleanDescription(subtech.description || "");
+      const isLongDescription = cleanedDesc.length > this.SUBTECHNIQUE_TRUNCATE_LIMIT;
+      subItem.setAttribute("data-technique-id", subtech.id);
+      subItem.setAttribute("data-full-description", cleanedDesc);
+      if (isLongDescription) {
+        const truncated = this.truncateDescription(cleanedDesc, this.SUBTECHNIQUE_TRUNCATE_LIMIT);
+        subItem.setAttribute("data-truncated-description", truncated);
+      }
       if (!subtech.isFound) {
         subItem.addClass("mitre-technique-unfound");
       } else {
-        if (subtech.severity === "unknown_technique" || subtech.severity === "unknown_tactic") {
+        if (subtech.severity === "unknown_technique" || subtech.severity === "unknown_tactic" || subtech.severity === "empty_tactic") {
           subItem.addClass("mitre-technique-error");
         } else if (subtech.severity === "mismatch") {
           subItem.addClass("mitre-technique-warning");
         }
       }
       const subInfo = subItem.createDiv("mitre-technique-info");
+      if (isLongDescription) {
+        const expandIcon = subInfo.createEl("span", {
+          cls: "mitre-expand-icon",
+          text: "\u25B6"
+        });
+        subItem.addClass("has-expandable");
+        subItem.addClass("collapsed");
+        subItem.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.toggleSubtechniqueExpansion(subItem, subtech);
+        });
+      }
       if (subtech.isFound && subtech.severity !== "valid" && subtech.severity !== "not_found") {
-        const icon = subtech.severity === "unknown_technique" || subtech.severity === "unknown_tactic" ? "\u{1F534}" : "\u26A0\uFE0F";
+        const icon = subtech.severity === "unknown_technique" || subtech.severity === "unknown_tactic" || subtech.severity === "empty_tactic" ? "\u{1F534}" : "\u26A0\uFE0F";
         const warningEl = subInfo.createEl("span", {
           cls: "mitre-validation-icon",
           attr: {
-            "aria-label": subtech.validationMessage || "Warning",
             "title": subtech.validationMessage || "Warning"
           }
         });
@@ -1929,10 +1806,15 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
       }
       if (subtech.description) {
         const descEl = subItem.createDiv("mitre-technique-description");
-        const cleanedDesc = this.cleanDescription(subtech.description);
-        descEl.textContent = cleanedDesc;
+        let displayText;
+        if (isLongDescription) {
+          displayText = this.truncateDescription(cleanedDesc, this.SUBTECHNIQUE_TRUNCATE_LIMIT);
+        } else {
+          displayText = cleanedDesc;
+        }
+        descEl.textContent = displayText;
         if (searchState == null ? void 0 : searchState.isActive) {
-          this.highlightMatches(descEl, cleanedDesc, searchState);
+          this.highlightMatches(descEl, displayText, searchState);
         }
       }
       if (subtech.isFound) {
@@ -2136,7 +2018,7 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
         let color;
         if (technique.severity === "valid") {
           color = "#66bb6a";
-        } else if (technique.severity === "unknown_technique" || technique.severity === "unknown_tactic") {
+        } else if (technique.severity === "unknown_technique" || technique.severity === "unknown_tactic" || technique.severity === "empty_tactic") {
           color = "#f44336";
         } else if (technique.severity === "mismatch") {
           color = "#ffa500";
@@ -2145,7 +2027,7 @@ var RenderMitreModal = class extends import_obsidian2.Modal {
         }
         let comment = `Used in ${technique.count} IOC card${technique.count > 1 ? "s" : ""}`;
         if (technique.severity !== "valid" && technique.validationMessage) {
-          const icon = technique.severity === "unknown_technique" || technique.severity === "unknown_tactic" ? "\u{1F534}" : "\u26A0\uFE0F";
+          const icon = technique.severity === "unknown_technique" || technique.severity === "unknown_tactic" || technique.severity === "empty_tactic" ? "\u{1F534}" : "\u26A0\uFE0F";
           comment += `
 ${icon} ${technique.validationMessage}`;
         }
@@ -2349,8 +2231,9 @@ var RenderIOCCards = class {
    * @param iocType  - The IOCField definition from the type registry
    * @param iocTypeId - The snake_case key (needed to detect "hostname" special case)
    * @param osType   - If iocTypeId is "hostname", which OS variant was selected
+   * @param cardId   - Timestamp-based unique ID for the card (format: #YYYYMMDD-HHMM)
    */
-  static createCardContent(iocType, iocTypeId, osType = null) {
+  static createCardContent(iocType, iocTypeId, osType = null, cardId = "") {
     const now = new Date();
     const timestamp = now.toISOString().replace("T", " ").substring(0, 19);
     let iconSvg = iocType.svg;
@@ -2361,28 +2244,34 @@ var RenderIOCCards = class {
         style="display: flex; align-items: center; gap: 16px; margin-bottom: 30px; padding: 20px;
         background: linear-gradient(135deg, ${iocType.color}22, transparent);
         border-radius: 8px; border-bottom: 3px solid ${iocType.color};">
+        <div class="ioc-header-content" style="display: flex; align-items: center; gap: 16px; width: 100%;">
         <div class="ioc-icon" style="flex-shrink: 0;">${iconSvg}</div><h2 style="margin: 0;
-        color: ${iocType.color}; font-size: 24px; font-weight: 700;">${iocType.name}</h2></div>
-        <div class="ioc-card-content" style="padding: 0 20px;"></div></div>
+        color: ${iocType.color}; font-size: 24px; font-weight: 700;">${iocType.name}</h2>
+        <span class="ioc-card-id" style="margin-left: auto; padding: 2px 8px; font-size: 11px; font-weight: 600; background: var(--background-modifier-border); color: var(--text-muted); border-radius: 4px; font-family: var(--font-monospace);">${cardId}</span>
+        </div><!-- IOC_CARD_ID:${cardId} --></div></div>
 `;
     iocType.fields.forEach((field) => {
       content += `${field}: 
 
 
-
+------------
 `;
     });
     content += `Time of Event: ${timestamp}
 
+------------
 `;
     content += `Splunk Query: 
 
+------------
 `;
     content += `Mitre Tactic: 
 
+------------
 `;
     content += `Mitre Technique: 
 
+------------
 `;
     return content;
   }
@@ -2680,7 +2569,14 @@ var IOCCanvasPlugin = class extends import_obsidian5.Plugin {
       new import_obsidian5.Notice("Unknown IOC type: " + iocTypeId);
       return;
     }
-    const content = RenderIOCCards.createCardContent(iocType, iocTypeId, osType || null);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    const cardId = `#${year}${month}${day}-${hours}${minutes}`;
+    const content = RenderIOCCards.createCardContent(iocType, iocTypeId, osType || null, cardId);
     canvas.createTextNode({
       pos: { x: Math.random() * 400, y: Math.random() * 400 },
       size: { width: 400, height: 400 },

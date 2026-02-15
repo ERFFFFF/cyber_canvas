@@ -5,8 +5,7 @@
     "main": "main.js",
     "scripts": {
         "dev": "node esbuild.config.mjs",
-        "build": "node esbuild.config.mjs production",
-        "parse-mitre": "node scripts/parse-mitre-stix.js"
+        "build": "node esbuild.config.mjs production"
     },
     "keywords": ["obsidian", "cyber", "plugin", "ioc", "canvas", "cybersecurity", "timeline", "fixed", "icons"],
     "author": "Security Analyst",

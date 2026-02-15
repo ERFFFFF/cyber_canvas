@@ -352,7 +352,16 @@ export default class IOCCanvasPlugin extends Plugin {
             return;
         }
 
-        const content = RenderIOCCards.createCardContent(iocType, iocTypeId, osType || null);
+        // Generate timestamp-based card ID (format: #YYYYMMDD-HHMM)
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const cardId = `#${year}${month}${day}-${hours}${minutes}`;
+
+        const content = RenderIOCCards.createCardContent(iocType, iocTypeId, osType || null, cardId);
 
         canvas.createTextNode({
             pos: { x: Math.random() * 400, y: Math.random() * 400 },

@@ -2,11 +2,10 @@
  * MitreLoader.ts - Async loader for MITRE ATT&CK dataset
  *
  * Loads the full MITRE dataset from MITRE/enterprise-attack.json.
- * Falls back to embedded data in MitreData.ts if JSON file is missing.
+ * Requires enterprise-attack.json - throws error if unavailable.
  */
 
 import { App } from 'obsidian';
-import { MITRE_TACTICS, MITRE_TECHNIQUES, TacticInfo, TechniqueInfo } from './MitreData';
 
 export interface MitreDataset {
     version: string;
@@ -69,17 +68,22 @@ export async function loadMitreDataset(app: App): Promise<MitreDataset> {
                 console.warn('[MitreLoader] Unknown JSON format');
             }
         } else {
-            console.warn('[MitreLoader] JSON file not found at:', jsonPath);
+            console.error('[MitreLoader] JSON file not found at:', jsonPath);
+            throw new Error(
+                'MITRE ATT&CK dataset not found. Please ensure enterprise-attack.json exists in the MITRE folder. ' +
+                'Download from: https://github.com/mitre-attack/attack-stix-data'
+            );
         }
     } catch (err) {
-        console.warn('[MitreLoader] Failed to load JSON:', err);
+        console.error('[MitreLoader] Failed to load MITRE dataset:', err);
+        throw new Error(
+            'MITRE ATT&CK dataset not found. Please ensure enterprise-attack.json exists in the MITRE folder. ' +
+            'Download from: https://github.com/mitre-attack/attack-stix-data'
+        );
     }
 
-    // Fallback: use embedded data from MitreData.ts
-    console.log('[MitreLoader] Using embedded fallback data');
-    cachedDataset = convertEmbeddedToDataset(MITRE_TACTICS, MITRE_TECHNIQUES);
-    console.log('[MitreLoader] ✓ Embedded data loaded. Techniques:', Object.keys(cachedDataset.techniques).length);
-    return cachedDataset;
+    // If we reach here without returning, dataset load failed
+    throw new Error('MITRE ATT&CK dataset could not be loaded');
 }
 
 /**
@@ -187,22 +191,22 @@ function generateAbbreviations(tacticName: string): string[] {
         abbrevs.push(words.map(w => w[0]).join('').toUpperCase());
     }
 
-    // Common abbreviations
+    // Common abbreviations (including short 2-letter variants)
     const commonAbbrevs: Record<string, string[]> = {
-        'Reconnaissance': ['RECON'],
-        'Resource Development': ['RESOURCE', 'RES'],
-        'Initial Access': ['IA'],
-        'Execution': ['EXEC', 'EXE'],
-        'Persistence': ['PERSIST', 'PERS'],
-        'Privilege Escalation': ['PRIV', 'PE'],
-        'Defense Evasion': ['DEFENSE', 'DEF'],
-        'Credential Access': ['CRED'],
-        'Discovery': ['DISC'],
-        'Lateral Movement': ['LATERAL', 'LM'],
-        'Collection': ['COLLECT', 'COL'],
-        'Command and Control': ['C2', 'CNC'],
-        'Exfiltration': ['EXFIL'],
-        'Impact': ['IMP']
+        'Reconnaissance': ['RECON', 'RECCE', 'RE'],
+        'Resource Development': ['RESOURCE', 'RES', 'RD'],
+        'Initial Access': ['IA', 'INIT'],
+        'Execution': ['EXEC', 'EXE', 'EX'],
+        'Persistence': ['PERSIST', 'PERS', 'PS'],
+        'Privilege Escalation': ['PRIV', 'PE', 'PRIVESC', 'PRIV ESC'],
+        'Defense Evasion': ['DEFENSE', 'DEF', 'DE'],
+        'Credential Access': ['CRED', 'CA', 'CRED ACCESS'],
+        'Discovery': ['DISC', 'DIS', 'DI'],
+        'Lateral Movement': ['LATERAL', 'LM', 'LAT MOVE'],
+        'Collection': ['COLLECT', 'COL', 'CO'],
+        'Command and Control': ['C2', 'CNC', 'CC'],
+        'Exfiltration': ['EXFIL', 'EXFILTRATE', 'EX'],
+        'Impact': ['IMP', 'IM']
     };
 
     if (commonAbbrevs[tacticName]) {
@@ -212,49 +216,6 @@ function generateAbbreviations(tacticName: string): string[] {
     return abbrevs;
 }
 
-/**
- * Convert old embedded format to new unified format.
- */
-function convertEmbeddedToDataset(oldTactics: Record<string, TacticInfo>, oldTechniques: Record<string, TechniqueInfo>): MitreDataset {
-    console.debug('[MitreLoader] Converting embedded data to dataset format');
-
-    const tactics: Record<string, TacticData> = {};
-    const techniques: Record<string, TechniqueData> = {};
-
-    // Convert tactics
-    Object.values(oldTactics).forEach(tactic => {
-        tactics[tactic.tacticId] = {
-            id: tactic.tacticId,
-            name: tactic.displayName,
-            short_name: tactic.shortName,
-            description: `The adversary is trying to ${tactic.displayName.toLowerCase()}.`,
-            abbreviations: tactic.abbreviations || []
-        };
-    });
-
-    // Convert techniques - map normalized tactic IDs to TA IDs
-    Object.values(oldTechniques).forEach(technique => {
-        const tacticIds = technique.tactics.map(normalizedId => {
-            const tactic = oldTactics[normalizedId];
-            return tactic ? tactic.tacticId : normalizedId;
-        });
-
-        techniques[technique.id] = {
-            id: technique.id,
-            name: technique.name,
-            description: technique.description || `Technique: ${technique.name}`,
-            tactics: tacticIds,
-            url: `https://attack.mitre.org/techniques/${technique.id.replace('.', '/')}`
-        };
-    });
-
-    return {
-        version: 'embedded',
-        last_updated: new Date().toISOString().split('T')[0],
-        tactics,
-        techniques
-    };
-}
 
 /**
  * Normalize tactic name for lookup, handling abbreviations.
@@ -301,7 +262,7 @@ export function validateTechniqueTactic(
     tacticInput: string,
     dataset: MitreDataset
 ): {
-    severity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch';
+    severity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic';
     message?: string;
     tacticId?: string;
 } {

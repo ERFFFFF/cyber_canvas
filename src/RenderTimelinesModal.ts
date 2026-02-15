@@ -101,14 +101,18 @@ export class RenderTimelinesModal extends Modal {
             console.log('[TimeTimeline] Will display value?', !!(ioc.value && ioc.value.trim()));
             console.log('[TimeTimeline] IOC Time:', ioc.time);
 
-            // Display time and value together in one line
+            // Display time on first line
             const timeEl = detailsContainer.createDiv('timeline-time');
+            timeEl.innerHTML = `🕐 Time: ${ioc.time}`;
+            console.log('[TimeTimeline] Displaying time:', timeEl.innerHTML);
+
+            // Display value on its own line below if available
             if (ioc.value && ioc.value.trim()) {
-                timeEl.innerHTML = `🕐 Time: ${ioc.time} - Value: ${ioc.value}`;
-                console.log('[TimeTimeline] ✓ DISPLAYING combined time+value:', timeEl.innerHTML);
+                const valueEl = detailsContainer.createDiv('timeline-value');
+                valueEl.innerHTML = `📌 Value: ${ioc.value}`;
+                console.log('[TimeTimeline] ✓ DISPLAYING value:', valueEl.innerHTML);
             } else {
-                timeEl.innerHTML = `🕐 Time: ${ioc.time}`;
-                console.log('[TimeTimeline] ✗ NO VALUE - showing time only');
+                console.log('[TimeTimeline] ✗ NO VALUE to display');
                 console.log('[TimeTimeline] Reason: value is', ioc.value === undefined ? 'undefined' : ioc.value === null ? 'null' : ioc.value === '' ? 'empty string' : 'falsy after trim');
             }
             console.log('═══════════════════════════════════════════════════');

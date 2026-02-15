@@ -10,11 +10,6 @@ import { TimeTimelineProcessor } from './TimeTimelineProcessing';
 import { IOCNodeData } from './IOCParser';
 import { IOC_TYPES } from './IOCCardsTypes';
 import {
-    getTacticDisplayName,
-    getTechniqueInfo,
-    MITRE_TACTICS
-} from './MitreData';
-import {
     loadMitreDataset,
     validateTechniqueTactic,
     MitreDataset
@@ -27,7 +22,7 @@ interface MitreTechnique {
     tacticId: string;     // e.g., "TA0006" (MITRE tactic ID)
     count: number;        // How many IOC cards reference this
     iocCards: string[];   // IOC card IDs that use this technique
-    severity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'not_found'; // Validation severity
+    severity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic' | 'not_found'; // Validation severity
     validationMessage?: string; // Error message if invalid
     description?: string; // Technique description
     isFound: boolean;     // Whether this technique has IOC cards
@@ -52,6 +47,18 @@ interface SearchMatch {
     matchText?: string;
 }
 
+interface ValidationError {
+    techniqueId: string;
+    techniqueName: string;
+    severity: 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic';
+    message: string;
+    iocCards: Array<{
+        cardId: string;
+        iocType: string;
+        nodeId: string;
+    }>;
+}
+
 export class RenderMitreModal extends Modal {
     private plugin: any;
     private timeProcessor: TimeTimelineProcessor;
@@ -62,6 +69,11 @@ export class RenderMitreModal extends Modal {
     private searchBar: HTMLInputElement | null = null;
     private searchClearButton: HTMLElement | null = null;
     private searchMatchCount: HTMLElement | null = null;
+    private validationErrors: ValidationError[] = [];
+
+    // Truncation limits
+    private readonly TECHNIQUE_TRUNCATE_LIMIT = 180;
+    private readonly SUBTECHNIQUE_TRUNCATE_LIMIT = 100;
 
     constructor(app: App, plugin: any) {
         super(app);
@@ -188,6 +200,60 @@ export class RenderMitreModal extends Modal {
     }
 
     /**
+     * Toggle subtechnique expansion (expand/collapse).
+     * Handles description swap for individual subtechniques.
+     *
+     * @param subItem - The subtechnique DOM element
+     * @param subtechnique - The subtechnique data object
+     */
+    private toggleSubtechniqueExpansion(
+        subItem: HTMLElement,
+        subtechnique: MitreTechnique
+    ): void {
+        const isCollapsed = subItem.hasClass('collapsed');
+        const expandIcon = subItem.querySelector('.mitre-expand-icon') as HTMLElement;
+        const descEl = subItem.querySelector('.mitre-technique-description') as HTMLElement;
+
+        if (isCollapsed) {
+            // EXPAND
+            subItem.removeClass('collapsed');
+            subItem.addClass('expanded');
+            subItem.setAttribute('data-is-expanded', 'true');
+            if (expandIcon) expandIcon.setText('▼');
+
+            // Show full description
+            if (descEl) {
+                const fullDesc = subItem.getAttribute('data-full-description');
+                if (fullDesc) {
+                    descEl.textContent = fullDesc;
+                    // Re-apply search highlighting if active
+                    if (this.currentSearchState?.isActive) {
+                        this.highlightMatches(descEl, fullDesc, this.currentSearchState);
+                    }
+                }
+            }
+        } else {
+            // COLLAPSE
+            subItem.removeClass('expanded');
+            subItem.addClass('collapsed');
+            subItem.setAttribute('data-is-expanded', 'false');
+            if (expandIcon) expandIcon.setText('▶');
+
+            // Show truncated description
+            if (descEl) {
+                const truncatedDesc = subItem.getAttribute('data-truncated-description');
+                if (truncatedDesc) {
+                    descEl.textContent = truncatedDesc;
+                    // Re-apply search highlighting if active
+                    if (this.currentSearchState?.isActive) {
+                        this.highlightMatches(descEl, truncatedDesc, this.currentSearchState);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Load MITRE dataset asynchronously
      */
     private async loadDataset() {
@@ -196,6 +262,8 @@ export class RenderMitreModal extends Modal {
             console.debug('[MitreModal] Dataset loaded:', this.mitreDataset.version, '- Techniques:', Object.keys(this.mitreDataset.techniques).length);
         } catch (err) {
             console.error('[MitreModal] Failed to load dataset:', err);
+            this.mitreDataset = null;
+            // Error will be displayed in renderMitreMapping when dataset is null
         }
     }
 
@@ -355,6 +423,22 @@ export class RenderMitreModal extends Modal {
         console.debug('[MitreModal] ===== AGGREGATION COMPLETE =====');
         console.debug('[MitreModal] Tactics:', tactics.length);
 
+        // Show error if dataset couldn't be loaded
+        if (!this.mitreDataset) {
+            container.createEl('div', {
+                cls: 'mitre-error-message',
+                text: '❌ MITRE ATT&CK dataset could not be loaded.'
+            });
+            container.createEl('p', {
+                text: 'Please ensure enterprise-attack.json exists in the MITRE folder.'
+            });
+            container.createEl('a', {
+                text: 'Download dataset from MITRE',
+                attr: { href: 'https://github.com/mitre-attack/attack-stix-data', target: '_blank' }
+            });
+            return;
+        }
+
         if (tactics.length === 0) {
             container.createEl('p', {
                 text: 'No MITRE tactics or techniques found in IOC cards. Add "Mitre Tactic" and "Mitre Technique" fields to your cards.',
@@ -388,20 +472,192 @@ export class RenderMitreModal extends Modal {
         // Store tactics for search filtering
         this.currentTactics = tactics;
 
+        // Render validation errors section if any exist
+        this.renderValidationErrors(container);
+
         // Render tactics as columns
         tactics.forEach(tactic => {
             this.renderTacticSection(container, tactic, this.currentSearchState);
         });
     }
 
+    /**
+     * Render validation errors section with card references.
+     * Groups errors by type (Tactic Errors, Technique Errors, Validation Mismatches).
+     *
+     * @param container - Container element for error section
+     */
+    private renderValidationErrors(container: HTMLElement): void {
+        if (this.validationErrors.length === 0) {
+            return; // No errors to display
+        }
+
+        console.debug('[MitreModal] Rendering', this.validationErrors.length, 'validation errors');
+
+        // Group errors by type
+        const emptyTacticErrors = this.validationErrors.filter(e => e.severity === 'empty_tactic');
+        const tacticErrors = this.validationErrors.filter(e => e.severity === 'unknown_tactic');
+        const techniqueErrors = this.validationErrors.filter(e => e.severity === 'unknown_technique');
+        const mismatchErrors = this.validationErrors.filter(e => e.severity === 'mismatch');
+
+        const errorSection = container.createDiv('mitre-validation-errors');
+
+        // Header with total count
+        const header = errorSection.createDiv('mitre-errors-header');
+        header.createEl('h3', {
+            text: `⚠️ Validation Issues (${this.validationErrors.length})`
+        });
+
+        // Collapsible toggle
+        const toggleBtn = header.createEl('button', {
+            text: 'Hide',
+            cls: 'mitre-errors-toggle'
+        });
+
+        const errorsList = errorSection.createDiv('mitre-errors-list');
+        errorSection.addClass('expanded');
+
+        // Toggle collapse/expand
+        toggleBtn.addEventListener('click', () => {
+            if (errorSection.hasClass('expanded')) {
+                errorSection.removeClass('expanded');
+                errorSection.addClass('collapsed');
+                toggleBtn.setText('Show');
+                errorsList.style.display = 'none';
+            } else {
+                errorSection.removeClass('collapsed');
+                errorSection.addClass('expanded');
+                toggleBtn.setText('Hide');
+                errorsList.style.display = 'block';
+            }
+        });
+
+        // Render each error category with its own section (empty_tactic before unknown_tactic)
+        if (emptyTacticErrors.length > 0) {
+            this.renderErrorCategory(errorsList, 'Missing Tactic', emptyTacticErrors, '🔴');
+        }
+
+        if (tacticErrors.length > 0) {
+            this.renderErrorCategory(errorsList, 'Unknown Tactic', tacticErrors, '🔴');
+        }
+
+        if (techniqueErrors.length > 0) {
+            this.renderErrorCategory(errorsList, 'Technique Errors', techniqueErrors, '🔴');
+        }
+
+        if (mismatchErrors.length > 0) {
+            this.renderErrorCategory(errorsList, 'Validation Mismatches', mismatchErrors, '⚠️');
+        }
+    }
+
+    /**
+     * Render a category of validation errors with header and items.
+     *
+     * @param container - Parent container element
+     * @param categoryTitle - Display title for this error category
+     * @param errors - Array of errors in this category
+     * @param icon - Icon to use for this category
+     */
+    private renderErrorCategory(
+        container: HTMLElement,
+        categoryTitle: string,
+        errors: ValidationError[],
+        icon: string
+    ): void {
+        // Category header
+        const categorySection = container.createDiv('mitre-error-category');
+        const categoryHeader = categorySection.createDiv('mitre-error-category-header');
+        categoryHeader.createEl('h4', {
+            text: `${icon} ${categoryTitle} (${errors.length})`
+        });
+
+        // Render each error in this category
+        errors.forEach(error => {
+            const errorItem = categorySection.createDiv('mitre-error-item');
+
+            // Apply severity styling
+            if (error.severity === 'unknown_technique' || error.severity === 'unknown_tactic' || error.severity === 'empty_tactic') {
+                errorItem.addClass('mitre-error-critical');  // Red
+            } else if (error.severity === 'mismatch') {
+                errorItem.addClass('mitre-error-warning');   // Orange
+            }
+
+            // Error header with technique ID and name
+            const errorHeader = errorItem.createDiv('mitre-error-header');
+            errorHeader.createEl('span', {
+                text: error.techniqueId,
+                cls: 'mitre-error-technique-id'
+            });
+            errorHeader.createEl('span', {
+                text: error.techniqueName,
+                cls: 'mitre-error-technique-name'
+            });
+
+            // Error message
+            errorItem.createDiv({
+                text: error.message,
+                cls: 'mitre-error-message'
+            });
+
+            // Card references
+            const cardsSection = errorItem.createDiv('mitre-error-cards');
+            cardsSection.createEl('span', {
+                text: 'Affected cards: ',
+                cls: 'mitre-error-cards-label'
+            });
+
+            error.iocCards.forEach((card, index) => {
+                const cardBadge = cardsSection.createEl('span', {
+                    cls: 'mitre-error-card-badge',
+                    attr: { 'title': `Node ID: ${card.nodeId}` }
+                });
+
+                // Format: "IP Address #20260214-1534"
+                cardBadge.createEl('span', {
+                    text: card.iocType,
+                    cls: 'mitre-error-card-type'
+                });
+                cardBadge.createEl('span', {
+                    text: ` ${card.cardId}`,
+                    cls: 'mitre-error-card-id'
+                });
+
+                // Add comma separator except for last card
+                if (index < error.iocCards.length - 1) {
+                    cardsSection.createEl('span', { text: ', ' });
+                }
+            });
+        });
+    }
+
+    /**
+     * Determines if newSeverity should override existingSeverity when aggregating.
+     * Priority: unknown_technique > unknown_tactic > empty_tactic > mismatch > valid
+     */
+    private shouldOverrideSeverity(
+        newSeverity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic',
+        existingSeverity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic'
+    ): boolean {
+        const severityRank = {
+            'unknown_technique': 5,
+            'unknown_tactic': 4,
+            'empty_tactic': 3,
+            'mismatch': 2,
+            'valid': 1
+        };
+        return severityRank[newSeverity] > severityRank[existingSeverity];
+    }
+
     private async aggregateTacticsTechniques(iocData: IOCNodeData[]): Promise<MitreTactic[]> {
         // Wait for dataset to load
         if (!this.mitreDataset) {
             await this.loadDataset();
-            if (!this.mitreDataset) {
-                console.error('[MitreModal] Failed to load dataset');
-                return [];
-            }
+        }
+
+        // If dataset is still null after loading, show error in UI
+        if (!this.mitreDataset) {
+            console.error('[MitreModal] Failed to load dataset');
+            return [];
         }
 
         console.log('[MitreModal] Starting full matrix aggregation with', iocData.length, 'IOC cards');
@@ -411,22 +667,99 @@ export class RenderMitreModal extends Modal {
         const foundTechniques = new Map<string, {
             count: number;
             iocCards: string[];
-            severity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch';
+            severity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic';
             validationMessage?: string;
             userProvidedTactic: string; // Original tactic string from IOC card
         }>();
 
+        // NEW: Track validation per card for accurate error reporting
+        const cardValidations = new Map<string, {
+            cardId: string;
+            techniqueId: string;
+            techniqueName: string;
+            tactic: string;
+            severity: 'valid' | 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic';
+            validationMessage?: string;
+            iocType: string;
+            nodeId: string;
+        }>();
+
         iocData.forEach(ioc => {
-            if (!ioc.tactic || !ioc.technique) {
+            // Explicitly trim and convert falsy values to empty string
+            const rawTactic = (ioc.tactic || '').trim();
+            const rawTechnique = (ioc.technique || '').trim();
+
+            // Case 1: Empty technique - always skip (can't validate without a technique)
+            if (!rawTechnique) {
+                console.debug('[MitreModal] Skipping IOC card with empty technique:', {
+                    id: ioc.id,
+                    cardId: ioc.cardId || '(no ID)',
+                    type: ioc.type,
+                    hasTactic: !!rawTactic,
+                    hasTechnique: false,
+                    tacticValue: rawTactic || '(empty)',
+                    techniqueValue: '(empty)'
+                });
                 return;
             }
 
-            const tactic = ioc.tactic.trim();
-            const technique = ioc.technique.trim();
-            if (!tactic || !technique) return;
-
+            const technique = rawTechnique;
             const techniqueId = this.extractTechniqueId(technique);
             const techniqueName = this.extractTechniqueName(technique);
+
+            // Case 2: Filled technique but empty tactic - show error
+            if (!rawTactic) {
+                console.debug('[MitreModal] Found IOC card with empty tactic:', {
+                    id: ioc.id,
+                    cardId: ioc.cardId || '(no ID)',
+                    type: ioc.type,
+                    techniqueId: techniqueId,
+                    technique: technique
+                });
+
+                // Create validation result with empty_tactic severity
+                const validation = {
+                    severity: 'empty_tactic' as const,
+                    message: 'Tactic field is empty',
+                    tacticId: undefined
+                };
+
+                // NEW: Store individual card validation
+                cardValidations.set(ioc.id, {
+                    cardId: ioc.cardId || ioc.id,
+                    techniqueId: techniqueId,
+                    techniqueName: techniqueName,
+                    tactic: '(empty)',
+                    severity: validation.severity,
+                    validationMessage: validation.message,
+                    iocType: ioc.type,
+                    nodeId: ioc.id
+                });
+
+                // Add to foundTechniques map (for technique-level aggregation)
+                if (foundTechniques.has(techniqueId)) {
+                    const existing = foundTechniques.get(techniqueId)!;
+                    existing.count++;
+                    existing.iocCards.push(ioc.id);
+                    // Keep worst severity using helper function
+                    if (this.shouldOverrideSeverity(validation.severity, existing.severity)) {
+                        existing.severity = validation.severity;
+                        existing.validationMessage = validation.message;
+                    }
+                } else {
+                    foundTechniques.set(techniqueId, {
+                        count: 1,
+                        iocCards: [ioc.id],
+                        severity: validation.severity,
+                        validationMessage: validation.message,
+                        userProvidedTactic: '(empty)'
+                    });
+                }
+                return;
+            }
+
+            // Case 3: Both tactic and technique filled - normal validation
+            const tactic = rawTactic;
 
             // Validate technique-tactic mapping
             const validation = validateTechniqueTactic(techniqueId, tactic, this.mitreDataset!);
@@ -437,14 +770,25 @@ export class RenderMitreModal extends Modal {
                 severity: validation.severity
             });
 
+            // NEW: Always store individual card validation
+            cardValidations.set(ioc.id, {
+                cardId: ioc.cardId || ioc.id,
+                techniqueId: techniqueId,
+                techniqueName: techniqueName,
+                tactic: tactic,
+                severity: validation.severity,
+                validationMessage: validation.message,
+                iocType: ioc.type,
+                nodeId: ioc.id
+            });
+
+            // Existing foundTechniques aggregation (for matrix coloring)
             if (foundTechniques.has(techniqueId)) {
                 const existing = foundTechniques.get(techniqueId)!;
                 existing.count++;
                 existing.iocCards.push(ioc.id);
-                // Keep worst severity
-                if (validation.severity === 'unknown_technique' ||
-                    validation.severity === 'unknown_tactic' ||
-                    (validation.severity === 'mismatch' && existing.severity === 'valid')) {
+                // Keep worst severity using helper function
+                if (this.shouldOverrideSeverity(validation.severity, existing.severity)) {
                     existing.severity = validation.severity;
                     existing.validationMessage = validation.message;
                 }
@@ -571,6 +915,61 @@ export class RenderMitreModal extends Modal {
             foundTechniques: foundTechniques.size
         });
 
+        // STEP 5: Collect validation errors for display (using per-card validation)
+        console.log('[MitreModal] Collecting validation errors from card-level validation...');
+        this.validationErrors = [];
+
+        // Group cards by technique for display
+        const errorsByTechnique = new Map<string, {
+            techniqueId: string;
+            techniqueName: string;
+            severity: 'unknown_technique' | 'unknown_tactic' | 'mismatch' | 'empty_tactic';
+            message: string;
+            cards: Array<{
+                cardId: string;
+                iocType: string;
+                nodeId: string;
+            }>;
+        }>();
+
+        // NEW: Filter errors by card-level validation (not technique-level)
+        cardValidations.forEach((cardValidation, cardId) => {
+            // Only include cards with actual errors
+            if (cardValidation.severity !== 'valid') {
+                const key = `${cardValidation.techniqueId}-${cardValidation.severity}`;
+
+                if (!errorsByTechnique.has(key)) {
+                    errorsByTechnique.set(key, {
+                        techniqueId: cardValidation.techniqueId,
+                        techniqueName: cardValidation.techniqueName,
+                        severity: cardValidation.severity as any,
+                        message: cardValidation.validationMessage || 'Validation error',
+                        cards: []
+                    });
+                }
+
+                errorsByTechnique.get(key)!.cards.push({
+                    cardId: cardValidation.cardId,
+                    iocType: cardValidation.iocType,
+                    nodeId: cardValidation.nodeId
+                });
+            }
+        });
+
+        // Convert to validation errors array
+        errorsByTechnique.forEach((errorData) => {
+            this.validationErrors.push({
+                techniqueId: errorData.techniqueId,
+                techniqueName: errorData.techniqueName,
+                severity: errorData.severity,
+                message: errorData.message,
+                iocCards: errorData.cards
+            });
+        });
+
+        console.log('[MitreModal] Found', this.validationErrors.length, 'validation error groups from', cardValidations.size, 'cards');
+        console.log('[MitreModal] Cards with errors:', Array.from(cardValidations.values()).filter(v => v.severity !== 'valid').length);
+
         return tactics;
     }
 
@@ -584,13 +983,18 @@ export class RenderMitreModal extends Modal {
      * - "Phishing (T1566)" -> "T1566"
      * - "T1566.001 - Spearphishing Attachment" -> "T1566.001"
      * - "Phishing" (name only) -> "Phishing" (fallback, will fail validation)
+     *
+     * NOTE: Technique field is already uppercased by IOCParser for consistency
      */
     private extractTechniqueId(technique: string): string {
         // Try to match full technique ID with optional sub-technique
-        const idMatch = technique.match(/T\d{4}(?:\.\d{3})?/);
+        // Case-insensitive match since input is uppercased
+        const idMatch = technique.match(/T\d{4}(?:\.\d{3})?/i);
         if (idMatch) {
-            console.debug('[MitreModal] Extracted technique ID:', idMatch[0], 'from:', technique);
-            return idMatch[0];
+            // Ensure returned ID is uppercase
+            const techniqueId = idMatch[0].toUpperCase();
+            console.debug('[MitreModal] Extracted technique ID:', techniqueId, 'from:', technique);
+            return techniqueId;
         }
 
         // If no ID found, return the raw string (will be flagged as invalid)
@@ -625,13 +1029,13 @@ export class RenderMitreModal extends Modal {
             return name;
         }
 
-        // If format is just ID, try to look up the name
+        // If format is just ID, try to look up the name from loaded dataset
         const idOnlyMatch = technique.match(/^T\d{4}(?:\.\d{3})?$/);
-        if (idOnlyMatch) {
-            const info = getTechniqueInfo(idOnlyMatch[0]);
-            if (info) {
-                console.debug('[MitreModal] Looked up name for ID:', idOnlyMatch[0], '->', info.name);
-                return info.name;
+        if (idOnlyMatch && this.mitreDataset) {
+            const techData = this.mitreDataset.techniques[idOnlyMatch[0]];
+            if (techData) {
+                console.debug('[MitreModal] Looked up name for ID:', idOnlyMatch[0], '->', techData.name);
+                return techData.name;
             }
         }
 
@@ -690,7 +1094,8 @@ export class RenderMitreModal extends Modal {
             } else {
                 // Apply validation styling for found techniques
                 if (technique.severity === 'unknown_technique' ||
-                    technique.severity === 'unknown_tactic') {
+                    technique.severity === 'unknown_tactic' ||
+                    technique.severity === 'empty_tactic') {
                     techItem.addClass('mitre-technique-error');      // Red
                 } else if (technique.severity === 'mismatch') {
                     techItem.addClass('mitre-technique-warning');    // Orange
@@ -718,13 +1123,12 @@ export class RenderMitreModal extends Modal {
 
             // Show validation icon ONLY for found techniques with issues
             if (technique.isFound && technique.severity !== 'valid' && technique.severity !== 'not_found') {
-                const icon = (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic')
+                const icon = (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic' || technique.severity === 'empty_tactic')
                     ? '🔴'
                     : '⚠️';
                 const warningEl = techInfo.createEl('span', {
                     cls: 'mitre-validation-icon',
                     attr: {
-                        'aria-label': technique.validationMessage || 'Warning',
                         'title': technique.validationMessage || 'Warning'
                     }
                 });
@@ -792,12 +1196,25 @@ export class RenderMitreModal extends Modal {
         subtechniques.forEach(subtech => {
             const subItem = container.createDiv('mitre-technique-item mitre-subtechnique');
 
+            // Check if subtechnique description is long
+            const cleanedDesc = this.cleanDescription(subtech.description || '');
+            const isLongDescription = cleanedDesc.length > this.SUBTECHNIQUE_TRUNCATE_LIMIT;
+
+            // Add data attributes for state management
+            subItem.setAttribute('data-technique-id', subtech.id);
+            subItem.setAttribute('data-full-description', cleanedDesc);
+            if (isLongDescription) {
+                const truncated = this.truncateDescription(cleanedDesc, this.SUBTECHNIQUE_TRUNCATE_LIMIT);
+                subItem.setAttribute('data-truncated-description', truncated);
+            }
+
             // Apply styling based on isFound and severity
             if (!subtech.isFound) {
                 subItem.addClass('mitre-technique-unfound');
             } else {
                 if (subtech.severity === 'unknown_technique' ||
-                    subtech.severity === 'unknown_tactic') {
+                    subtech.severity === 'unknown_tactic' ||
+                    subtech.severity === 'empty_tactic') {
                     subItem.addClass('mitre-technique-error');
                 } else if (subtech.severity === 'mismatch') {
                     subItem.addClass('mitre-technique-warning');
@@ -806,15 +1223,30 @@ export class RenderMitreModal extends Modal {
 
             const subInfo = subItem.createDiv('mitre-technique-info');
 
+            // Add expand icon if description is long
+            if (isLongDescription) {
+                const expandIcon = subInfo.createEl('span', {
+                    cls: 'mitre-expand-icon',
+                    text: '▶'
+                });
+                subItem.addClass('has-expandable');
+                subItem.addClass('collapsed');
+
+                // Click handler for expand/collapse
+                subItem.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.toggleSubtechniqueExpansion(subItem, subtech);
+                });
+            }
+
             // Show validation icon for found subtechniques with issues
             if (subtech.isFound && subtech.severity !== 'valid' && subtech.severity !== 'not_found') {
-                const icon = (subtech.severity === 'unknown_technique' || subtech.severity === 'unknown_tactic')
+                const icon = (subtech.severity === 'unknown_technique' || subtech.severity === 'unknown_tactic' || subtech.severity === 'empty_tactic')
                     ? '🔴'
                     : '⚠️';
                 const warningEl = subInfo.createEl('span', {
                     cls: 'mitre-validation-icon',
                     attr: {
-                        'aria-label': subtech.validationMessage || 'Warning',
                         'title': subtech.validationMessage || 'Warning'
                     }
                 });
@@ -836,15 +1268,25 @@ export class RenderMitreModal extends Modal {
                 this.highlightMatches(nameEl, subtech.name, searchState);
             }
 
-            // Show description (full text, no truncation for subtechniques)
+            // Show description with truncation
             if (subtech.description) {
                 const descEl = subItem.createDiv('mitre-technique-description');
-                const cleanedDesc = this.cleanDescription(subtech.description);
-                descEl.textContent = cleanedDesc;
 
-                // Apply search highlighting to description if active
+                // Show truncated or full based on expandable state
+                let displayText: string;
+                if (isLongDescription) {
+                    // Start collapsed with truncated text
+                    displayText = this.truncateDescription(cleanedDesc, this.SUBTECHNIQUE_TRUNCATE_LIMIT);
+                } else {
+                    // Short descriptions show in full
+                    displayText = cleanedDesc;
+                }
+
+                descEl.textContent = displayText;
+
+                // Apply search highlighting if active
                 if (searchState?.isActive) {
-                    this.highlightMatches(descEl, cleanedDesc, searchState);
+                    this.highlightMatches(descEl, displayText, searchState);
                 }
             }
 
@@ -1101,7 +1543,7 @@ export class RenderMitreModal extends Modal {
                 let color: string;
                 if (technique.severity === 'valid') {
                     color = "#66bb6a";  // Green - valid
-                } else if (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic') {
+                } else if (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic' || technique.severity === 'empty_tactic') {
                     color = "#f44336";  // Red - unknown
                 } else if (technique.severity === 'mismatch') {
                     color = "#ffa500";  // Orange - wrong tactic
@@ -1112,7 +1554,7 @@ export class RenderMitreModal extends Modal {
                 // Build comment with validation status
                 let comment = `Used in ${technique.count} IOC card${technique.count > 1 ? 's' : ''}`;
                 if (technique.severity !== 'valid' && technique.validationMessage) {
-                    const icon = (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic') ? '🔴' : '⚠️';
+                    const icon = (technique.severity === 'unknown_technique' || technique.severity === 'unknown_tactic' || technique.severity === 'empty_tactic') ? '🔴' : '⚠️';
                     comment += `\n${icon} ${technique.validationMessage}`;
                 }
 

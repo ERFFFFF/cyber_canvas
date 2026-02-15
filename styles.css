@@ -69,6 +69,25 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
+/* Card ID badge in IOC card header */
+.ioc-card-id {
+    margin-left: auto;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    border-radius: 4px;
+    font-family: var(--font-monospace);
+}
+
+.ioc-header-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
 /* ==========================================================================
    3. IOC TYPE SELECTOR MODAL - Grid of IOC type buttons with SVG icons
    ========================================================================== */
@@ -278,6 +297,24 @@
     line-height: 1.4;
 }
 
+/* Timeline value display - shown on separate line below timestamp */
+.timeline-value {
+    display: block;
+    margin-top: 8px;
+    padding: 10px 16px;
+    background: var(--background-secondary);
+    border-left: 3px solid var(--interactive-accent);
+    border-radius: 4px;
+    font-family: var(--font-monospace);
+    font-size: 13px;
+    color: var(--text-normal);
+    word-break: break-word;
+}
+
+.timeline-value:hover {
+    background: var(--background-modifier-hover);
+}
+
 /* ==========================================================================
    6. MITRE MODAL - ATT&CK Technique Mapper
    ========================================================================== */
@@ -327,6 +364,170 @@
     background: var(--interactive-accent-hover);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ==========================================================================
+   MITRE VALIDATION ERRORS SECTION
+   ========================================================================== */
+
+.mitre-validation-errors {
+    margin: 16px 0 24px 0;
+    padding: 16px;
+    background: var(--background-secondary);
+    border-left: 4px solid var(--text-error);
+    border-radius: 8px;
+}
+
+.mitre-errors-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.mitre-errors-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-error);
+}
+
+.mitre-errors-toggle {
+    padding: 4px 12px;
+    font-size: 12px;
+    background: var(--interactive-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mitre-errors-toggle:hover {
+    background: var(--interactive-hover);
+}
+
+.mitre-validation-errors.collapsed .mitre-errors-list {
+    display: none;
+}
+
+.mitre-errors-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.mitre-error-item {
+    padding: 12px;
+    background: var(--background-primary);
+    border-radius: 6px;
+    border-left: 3px solid var(--text-muted);
+}
+
+.mitre-error-item.mitre-error-critical {
+    border-left-color: var(--text-error);
+}
+
+.mitre-error-item.mitre-error-warning {
+    border-left-color: #ffa500;
+}
+
+.mitre-error-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.mitre-error-technique-id {
+    font-family: var(--font-monospace);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.mitre-error-technique-name {
+    color: var(--text-normal);
+    font-weight: 500;
+}
+
+.mitre-error-message {
+    margin: 6px 0 10px 0;
+    color: var(--text-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.mitre-error-cards {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.mitre-error-cards-label {
+    color: var(--text-faint);
+    font-weight: 500;
+}
+
+.mitre-error-card-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: help;
+}
+
+.mitre-error-card-type {
+    color: var(--text-normal);
+    font-weight: 500;
+}
+
+.mitre-error-card-id {
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-size: 11px;
+}
+
+/* Error category headers */
+.mitre-error-category {
+    margin-bottom: 16px;
+}
+
+.mitre-error-category-header {
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mitre-error-category-header h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-accent);
+}
+
+.mitre-error-category .mitre-error-item {
+    margin-bottom: 8px;
+}
+
+.mitre-error-category .mitre-error-item:last-child {
+    margin-bottom: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .mitre-error-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .mitre-error-cards {
+        flex-direction: column;
+        align-items: flex-start;
+    }
 }
 
 /* Column-based layout for tactics */
@@ -495,10 +696,6 @@
     overflow: visible;     /* Allow subtechniques to render when expanded */
 }
 
-.mitre-technique-item.expanded .mitre-expand-icon {
-    transform: rotate(90deg);
-}
-
 /* Subtechniques container */
 .mitre-subtechniques-container {
     margin-top: 12px;
@@ -526,6 +723,26 @@
 
 .mitre-subtechnique .mitre-technique-id {
     font-size: 11px;
+}
+
+/* Subtechnique expand/collapse states */
+.mitre-subtechnique.has-expandable {
+    cursor: pointer;
+}
+
+.mitre-subtechnique.collapsed {
+    /* Default collapsed state */
+}
+
+.mitre-subtechnique.expanded {
+    /* Allow more space when expanded */
+    min-height: auto;
+}
+
+.mitre-subtechnique .mitre-expand-icon {
+    font-size: 10px;
+    margin-right: 6px;
+    transition: transform 0.2s ease;
 }
 
 /* Unfound techniques - Gray, subdued appearance */

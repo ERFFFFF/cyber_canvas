@@ -7,7 +7,8 @@
       "Bash(node -e:*)",
       "Bash(npm run parse-mitre:*)",
       "Bash(cd:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

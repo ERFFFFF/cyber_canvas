@@ -22,6 +22,8 @@ import { IOC_TYPES } from './IOCCardsTypes';
 export interface IOCNodeData {
     /** Canvas node ID */
     id: string;
+    /** Timestamp-based card ID (e.g. "#20260214-1534") */
+    cardId?: string;
     /** IOC type name (e.g. "IP Address", "File Hash") */
     type: string;
     /** Primary value extracted from the first code block */
@@ -306,19 +308,26 @@ function extractSplunkQuery(text: string): string {
  * Handles both formats:
  *   - Plain text: Mitre Tactic: <tactic>
  *   - Bold markdown: **Mitre Tactic:** <tactic>
+ *
+ * IMPORTANT: Use [ \t]* instead of \s* to avoid matching newlines.
+ * This prevents the regex from skipping empty lines and capturing the next field.
+ *
+ * @returns Normalized tactic value in UPPERCASE for consistent matching
  */
 function extractTactic(text: string): string {
     // Try plain text format first (current template format)
-    let match = text.match(/Mitre Tactic:\s*([^\n]+)/i);
+    // Use [ \t]* to match spaces/tabs but NOT newlines
+    // Use [^\n]* (not +) to allow capturing empty values
+    let match = text.match(/Mitre Tactic:[ \t]*([^\n]*)/i);
     if (match && match[1] && match[1].trim()) {
-        return match[1].trim();
+        return match[1].trim().toUpperCase();
     }
 
     // Fall back to bold markdown format (backwards compatibility)
-    match = text.match(/\*\*Mitre Tactic:\*\*\s*([^\n]+)/i)
+    match = text.match(/\*\*Mitre Tactic:\*\*[ \t]*([^\n]*)/i)
         || text.match(/\*\*Mitre Tactic:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
-    if (match && match[1]) {
-        return match[1].trim();
+    if (match && match[1] && match[1].trim()) {
+        return match[1].trim().toUpperCase();
     }
 
     return '';
@@ -330,21 +339,57 @@ function extractTactic(text: string): string {
  * Handles both formats:
  *   - Plain text: Mitre Technique: <technique>
  *   - Bold markdown: **Mitre Technique:** <technique>
+ *
+ * IMPORTANT: Use [ \t]* instead of \s* to avoid matching newlines.
+ * This prevents the regex from skipping empty lines and capturing the next field.
+ *
+ * @returns Normalized technique value in UPPERCASE for consistent matching
  */
 function extractTechnique(text: string): string {
     // Try plain text format first (current template format)
-    let match = text.match(/Mitre Technique:\s*([^\n]+)/i);
+    // Use [ \t]* to match spaces/tabs but NOT newlines
+    // Use [^\n]* (not +) to allow capturing empty values
+    let match = text.match(/Mitre Technique:[ \t]*([^\n]*)/i);
     if (match && match[1] && match[1].trim()) {
-        return match[1].trim();
+        return match[1].trim().toUpperCase();
     }
 
     // Fall back to bold markdown format (backwards compatibility)
-    match = text.match(/\*\*Mitre Technique:\*\*\s*([^\n]+)/i)
+    match = text.match(/\*\*Mitre Technique:\*\*[ \t]*([^\n]*)/i)
         || text.match(/\*\*Mitre Technique:\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/i);
-    if (match && match[1]) {
-        return match[1].trim();
+    if (match && match[1] && match[1].trim()) {
+        return match[1].trim().toUpperCase();
     }
 
+    return '';
+}
+
+/**
+ * Extract the Card ID field from IOC card markdown.
+ * Format: HTML comment (new) or legacy field (backward compatibility)
+ * New format: <!-- IOC_CARD_ID:#YYYYMMDD-HHMM -->
+ * Legacy format: "Card ID: #YYYYMMDD-HHMM"
+ */
+function extractCardId(text: string): string {
+    console.debug('[IOCParser] Extracting Card ID...');
+
+    // NEW FORMAT: Try HTML comment first (preferred)
+    const commentMatch = text.match(/<!-- IOC_CARD_ID:([^>]+) -->/);
+    if (commentMatch && commentMatch[1]) {
+        const cardId = commentMatch[1].trim();
+        console.debug('[IOCParser] Found Card ID in HTML comment:', cardId);
+        return cardId;
+    }
+
+    // LEGACY FORMAT: Fall back to markdown field for backward compatibility
+    const cardIdMatch = text.match(/Card ID:\s*([^\n]+)/i);
+    if (cardIdMatch && cardIdMatch[1]) {
+        const cardId = cardIdMatch[1].trim();
+        console.debug('[IOCParser] Found Card ID in legacy field format:', cardId);
+        return cardId;
+    }
+
+    console.debug('[IOCParser] No Card ID found');
     return '';
 }
 
@@ -419,6 +464,7 @@ export function parseIOCNode(node: any): IOCNodeData | null {
     const splunkQuery = extractSplunkQuery(text);
     const tactic = extractTactic(text);
     const technique = extractTechnique(text);
+    const cardId = extractCardId(text);
 
     console.log('[IOCParser] parseIOCNode - All extracted fields:');
     console.log('  - value:', value || '**EMPTY**');
@@ -426,6 +472,7 @@ export function parseIOCNode(node: any): IOCNodeData | null {
     console.log('  - splunkQuery:', splunkQuery || '(empty)');
     console.log('  - tactic:', tactic || '(empty)');
     console.log('  - technique:', technique || '(empty)');
+    console.log('  - cardId:', cardId || '(empty)');
 
     // Step 3: Look up icon and color from the IOC_TYPES constant
     const fallbackColor = node.color || '#333';
@@ -434,6 +481,7 @@ export function parseIOCNode(node: any): IOCNodeData | null {
 
     const result = {
         id: node.id,
+        cardId: cardId,
         type: iocType,
         value,
         time,

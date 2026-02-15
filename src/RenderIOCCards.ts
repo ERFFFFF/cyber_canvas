@@ -21,11 +21,13 @@ export class RenderIOCCards {
      * @param iocType  - The IOCField definition from the type registry
      * @param iocTypeId - The snake_case key (needed to detect "hostname" special case)
      * @param osType   - If iocTypeId is "hostname", which OS variant was selected
+     * @param cardId   - Timestamp-based unique ID for the card (format: #YYYYMMDD-HHMM)
      */
     static createCardContent(
         iocType: IOCField,
         iocTypeId: string,
-        osType: string | null = null
+        osType: string | null = null,
+        cardId: string = ''
     ): string {
         const now = new Date();
         const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
@@ -43,24 +45,27 @@ export class RenderIOCCards {
         style="display: flex; align-items: center; gap: 16px; margin-bottom: 30px; padding: 20px;
         background: linear-gradient(135deg, ${iocType.color}22, transparent);
         border-radius: 8px; border-bottom: 3px solid ${iocType.color};">
+        <div class="ioc-header-content" style="display: flex; align-items: center; gap: 16px; width: 100%;">
         <div class="ioc-icon" style="flex-shrink: 0;">${iconSvg}</div><h2 style="margin: 0;
-        color: ${iocType.color}; font-size: 24px; font-weight: 700;">${iocType.name}</h2></div>
-        <div class="ioc-card-content" style="padding: 0 20px;"></div></div>\n`;
+        color: ${iocType.color}; font-size: 24px; font-weight: 700;">${iocType.name}</h2>
+        <span class="ioc-card-id" style="margin-left: auto; padding: 2px 8px; font-size: 11px; font-weight: 600; background: var(--background-modifier-border); color: var(--text-muted); border-radius: 4px; font-family: var(--font-monospace);">${cardId}</span>
+        </div><!-- IOC_CARD_ID:${cardId} --></div></div>\n`;
 
         // Type-specific fields: field label with space for user to fill in values
-        // No separators in template - users can type values directly after the label
-        // Parser will extract content between field label and next field or metadata section
+        // Delimiters (------------) mark clear value boundaries for reliable parsing
+        // Parser will extract content between field label and the delimiter
         iocType.fields.forEach((field: string) => {
-            content += `${field}: \n\n\n\n`;
+            content += `${field}: \n\n\n------------\n`;
         });
 
         // Fixed forensic metadata fields appended to every card type.
         // "Time of Event" is pre-filled with the creation timestamp; the rest
         // are left blank for the analyst.
-        content += `Time of Event: ${timestamp}\n\n`;
-        content += `Splunk Query: \n\n`;
-        content += `Mitre Tactic: \n\n`;
-        content += `Mitre Technique: \n\n`;
+        // Delimiters ensure reliable value extraction even with multi-line content.
+        content += `Time of Event: ${timestamp}\n\n------------\n`;
+        content += `Splunk Query: \n\n------------\n`;
+        content += `Mitre Tactic: \n\n------------\n`;
+        content += `Mitre Technique: \n\n------------\n`;
 
         return content;
     }
