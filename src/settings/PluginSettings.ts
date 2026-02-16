@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
-import IOCCanvasPlugin from './main';
+import IOCCanvasPlugin from '../main';
 
 /**
  * Default settings values applied when the plugin loads for the first time

@@ -13,7 +13,7 @@
  *   3. Fixed forensic fields -- Time of Event (auto-filled), Splunk Query,
  *      MITRE Tactic, and MITRE Technique (left blank for the analyst)
  */
-import { IOCField } from './IOCCardsTypes';
+import { IOCField } from '../types/IOCCardsTypes';
 
 export class RenderIOCCards {
     /**
@@ -22,12 +22,14 @@ export class RenderIOCCards {
      * @param iocTypeId - The snake_case key (needed to detect "hostname" special case)
      * @param osType   - If iocTypeId is "hostname", which OS variant was selected
      * @param cardId   - Timestamp-based unique ID for the card (format: #YYYYMMDD-HHMM)
+     * @param isChild  - If true, card gets [C] prefix; if false, gets [P] prefix
      */
     static createCardContent(
         iocType: IOCField,
         iocTypeId: string,
         osType: string | null = null,
-        cardId: string = ''
+        cardId: string = '',
+        isChild: boolean = false
     ): string {
         const now = new Date();
         const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
@@ -38,6 +40,11 @@ export class RenderIOCCards {
             iconSvg = iocType.os_icons[osType as keyof typeof iocType.os_icons] || iocType.svg;
         }
 
+        // Role badge: [P] for parent cards, [C] for child cards
+        const roleLabel = isChild ? '[C]' : '[P]';
+        const roleClass = isChild ? 'ioc-role-child' : 'ioc-role-parent';
+        const roleBadge = `<span class="ioc-card-role ${roleClass}" style="font-size: 12px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-right: 4px;">${roleLabel}</span>`;
+
         // The HTML header uses inline styles so the card is self-contained -- no
         // external CSS needed for the header to render correctly inside Obsidian's
         // canvas markdown preview.
@@ -47,7 +54,7 @@ export class RenderIOCCards {
         border-radius: 8px; border-bottom: 3px solid ${iocType.color};">
         <div class="ioc-header-content" style="display: flex; align-items: center; gap: 16px; width: 100%;">
         <div class="ioc-icon" style="flex-shrink: 0;">${iconSvg}</div><h2 style="margin: 0;
-        color: ${iocType.color}; font-size: 24px; font-weight: 700;">${iocType.name}</h2>
+        color: ${iocType.color}; font-size: 24px; font-weight: 700;">${roleBadge}${iocType.name}</h2>
         <span class="ioc-card-id" style="margin-left: auto; padding: 2px 8px; font-size: 11px; font-weight: 600; background: var(--background-modifier-border); color: var(--text-muted); border-radius: 4px; font-family: var(--font-monospace);">${cardId}</span>
         </div><!-- IOC_CARD_ID:${cardId} --></div></div>\n`;
 

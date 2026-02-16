@@ -44,8 +44,7 @@ export interface IOCField {
   /**
    * Master registry of all IOC types. Keys are stable snake_case identifiers
    * (e.g. "ip_address", "file_hash") used as internal references throughout the
-   * plugin. This object is mutable at runtime via IOCCardFactory to support
-   * custom user-defined IOC types.
+   * plugin.
    */
   export const IOC_TYPES: IOCCardsTypes = {
     // --- Network-related IOC types ---

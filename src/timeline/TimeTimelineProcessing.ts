@@ -10,8 +10,9 @@
  */
 
 import { App } from 'obsidian';
-import { IOCCardsTypes } from './IOCCardsTypes';
-import { parseIOCNode, IOCNodeData } from './IOCParser';
+import { IOCCardsTypes } from '../types/IOCCardsTypes';
+import { parseIOCNode, IOCNodeData } from '../parsing/IOCParser';
+import { DEBUG } from '../debug';
 
 export class TimeTimelineProcessor {
     private app: App;
@@ -38,23 +39,23 @@ export class TimeTimelineProcessor {
      * @returns Array of parsed IOC node data objects, unsorted
      */
     extractFixedIOCData(): IOCNodeData[] {
-        console.debug('[TimeProcessor] Starting extraction');
+        if (DEBUG) console.debug('[TimeProcessor] Starting extraction');
 
         const activeLeaf = this.app.workspace.activeLeaf;
         if (!activeLeaf || !activeLeaf.view || activeLeaf.view.getViewType() !== 'canvas') {
-            console.debug('[TimeProcessor] No active canvas view');
+            if (DEBUG) console.debug('[TimeProcessor] No active canvas view');
             return [];
         }
 
         const canvasView = activeLeaf.view as any;
         const canvas = canvasView.canvas;
         if (!canvas || !canvas.nodes) {
-            console.debug('[TimeProcessor] No canvas or nodes');
+            if (DEBUG) console.debug('[TimeProcessor] No canvas or nodes');
             return [];
         }
 
         const totalNodes = canvas.nodes.size || canvas.nodes.length || 0;
-        console.debug('[TimeProcessor] Processing', totalNodes, 'nodes');
+        if (DEBUG) console.debug('[TimeProcessor] Processing', totalNodes, 'nodes');
 
         // Parse each canvas text node and collect those with valid IOC types
         const iocData: IOCNodeData[] = [];
@@ -72,7 +73,7 @@ export class TimeTimelineProcessor {
             }
         });
 
-        console.debug('[TimeProcessor] Extraction complete - found:', iocData.length, 'IOCs,', emptyValueCount, 'empty values');
+        if (DEBUG) console.debug('[TimeProcessor] Extraction complete - found:', iocData.length, 'IOCs,', emptyValueCount, 'empty values');
         return iocData;
     }
 }

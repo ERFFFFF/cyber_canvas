@@ -10,37 +10,24 @@
  * the grid with an OS sub-selector (Windows Workstation / Windows Server /
  * macOS / Linux) so the card gets the correct platform icon.
  *
- * NOTE: This file declares its own local IOCField/IOCTypes interfaces rather
- * than importing from IOCCardsTypes.ts. They are structurally identical.
+ * Uses IOCField and IOCCardsTypes interfaces imported from IOCCardsTypes.ts.
  */
 import { App, Modal } from 'obsidian';
-
-interface IOCField {
-    name: string;
-    icon: string;
-    color: string;
-    fields: string[];
-    svg: string;
-    os_icons?: {
-        [key: string]: string;
-    };
-}
-
-interface IOCTypes {
-    [key: string]: IOCField;
-}
+import { IOCField, IOCCardsTypes } from '../types/IOCCardsTypes';
 
 /** Callback signature: receives the selected IOC type key and optional OS variant. */
 type OnSelectCallback = (iocTypeId: string, osType?: string) => void;
 
 export class RenderIOCCardsModal extends Modal {
-    private iocTypes: IOCTypes;
+    private iocTypes: IOCCardsTypes;
     private onSelect: OnSelectCallback;
+    private title: string;
 
-    constructor(app: App, iocTypes: IOCTypes, onSelect: OnSelectCallback) {
+    constructor(app: App, iocTypes: IOCCardsTypes, onSelect: OnSelectCallback, title?: string) {
         super(app);
         this.iocTypes = iocTypes;
         this.onSelect = onSelect;
+        this.title = title || 'Select IOC Type';
     }
 
     /** Builds the primary IOC type grid view. */
@@ -51,7 +38,7 @@ export class RenderIOCCardsModal extends Modal {
         this.modalEl.style.maxWidth = '900px';
         this.modalEl.style.width = '90vw';
 
-        contentEl.createEl('h2', { text: 'Select IOC Type' });
+        contentEl.createEl('h2', { text: this.title });
 
         const container = contentEl.createDiv('ioc-type-container');
 

@@ -178,6 +178,9 @@
 }
 
 .timeline-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
     margin-bottom: 24px;
     padding-bottom: 16px;
     border-bottom: 2px solid var(--background-modifier-border);
@@ -558,6 +561,7 @@
 .mitre-stats {
     display: flex;
     flex-direction: row;     /* Horizontal layout for stats items */
+    flex-wrap: wrap;         /* Allow wrapping to 2 rows if needed */
     gap: 24px;               /* Space between stats */
     justify-content: center; /* Center the stats */
     margin-bottom: 16px;     /* Space before content area */
@@ -571,6 +575,25 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--text-normal);
+}
+
+/* Warning statistics (missing fields - informational, not errors) */
+.mitre-stat-warning {
+    color: var(--text-warning);  /* Orange/amber color */
+    cursor: help;                /* Shows ? cursor on hover */
+}
+
+.mitre-stat-warning:hover {
+    color: var(--text-on-accent);  /* Brighter on hover */
+    background: var(--background-modifier-hover);  /* Subtle highlight */
+    border-radius: 4px;            /* Round corners on hover */
+    padding: 2px 6px;              /* Slight padding on hover */
+    margin: -2px -6px;             /* Negative margin to maintain position */
+}
+
+/* Tooltip styling (native browser title attribute) */
+.mitre-stat-warning[title] {
+    position: relative;
 }
 
 /* Each tactic is a vertical column */
@@ -590,7 +613,6 @@
 
     /* CHANGED: Allow full height without restriction */
     height: 100%;
-    /* max-height: 600px; ← REMOVED: Let columns fill available vertical space */
     display: flex;
     flex-direction: column;
 }
@@ -1282,4 +1304,460 @@
     text-align: left;
     max-width: 600px;
     margin: 0 auto;
+}
+
+/* ==========================================================================
+   TIMELINE COPY BUTTON
+   ========================================================================== */
+.timeline-copy-button {
+    padding: 6px 12px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    z-index: 10;
+    transition: background 0.2s ease;
+}
+
+.timeline-copy-button:hover {
+    background: var(--interactive-accent-hover);
+}
+
+/* ==========================================================================
+   TIMELINE TAB BAR (extends existing .timeline-tab-button styles)
+   ========================================================================== */
+.timeline-tab-bar {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+}
+
+.timeline-tab-button.active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.timeline-tab-content-area {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+}
+
+.timeline-tab-pane {
+    position: relative;  /* Added: allows absolute positioning of copy buttons within tabs */
+    min-height: 400px;   /* Changed: ensures enough space for content and buttons */
+}
+
+/* ==========================================================================
+   IOC CARD ROLE BADGES ([P] / [C])
+   ========================================================================== */
+.ioc-card-role {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 4px;
+    display: inline-block;
+}
+
+.ioc-role-parent {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.ioc-role-child {
+    background: #e67e22;
+    color: #fff;
+}
+
+/* ==========================================================================
+   GRAPH TIMELINE - Horizontal dot timeline with time range filtering
+   ========================================================================== */
+.graph-range-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.graph-range-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.graph-range-input {
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 13px;
+    font-family: var(--font-monospace);
+    width: 180px;
+}
+
+.graph-range-reset {
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 13px;
+    margin-left: 8px;
+    transition: all 0.2s ease;
+}
+
+.graph-range-reset:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.graph-timeline-area {
+    position: relative;
+    height: 160px;
+    margin-bottom: 24px;
+    padding: 20px 30px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+    overflow: hidden; /* Prevent horizontal scroll */
+    cursor: crosshair;
+}
+
+.graph-timeline-area.dragging {
+    cursor: col-resize;
+}
+
+.graph-time-axis {
+    position: absolute;
+    left: 30px;
+    right: 30px;
+    top: 50%;
+    height: 2px;
+    background: var(--background-modifier-border);
+}
+
+.graph-axis-tick {
+    position: absolute;
+    top: -4px;
+    width: 2px;
+    height: 10px;
+    background: var(--text-muted);
+    transform: translateX(-50%);
+}
+
+.graph-axis-tick::after {
+    content: attr(data-label);
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: pre-line;     /* Changed: respect \n newlines */
+    font-family: var(--font-monospace);
+    line-height: 1.2;          /* Added: tighter spacing for two lines */
+    text-align: center;        /* Added: center both lines */
+}
+
+.graph-dot {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 1;
+}
+
+.graph-dot:hover {
+    transform: translate(-50%, -50%) scale(1.5);
+    z-index: 10;
+}
+
+.graph-dot.selected {
+    box-shadow: 0 0 8px currentColor;
+}
+
+.graph-dot.range-boundary {
+    box-shadow: 0 0 12px currentColor;
+    transform: translate(-50%, -50%) scale(1.3);
+}
+
+.graph-selection-overlay {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: var(--interactive-accent);
+    opacity: 0.15;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.graph-tooltip {
+    position: absolute;
+    padding: 8px 12px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    z-index: 20;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    max-width: 250px;
+}
+
+.graph-tooltip-time {
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    font-size: 11px;
+}
+
+.graph-filter-count {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    font-weight: 600;
+}
+
+.graph-filtered-list {
+    margin-top: 8px;
+}
+
+/* ==========================================================================
+   LINK TIMELINE - Parent-child grouping by canvas arrows
+   ========================================================================== */
+.link-timeline-group {
+    margin-bottom: 8px;
+}
+
+.link-timeline-parent {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-left: 4px solid var(--interactive-accent);
+    background: var(--background-secondary);
+    border-radius: 6px;
+    transition: background 0.2s ease;
+}
+
+.link-timeline-parent:hover {
+    background: var(--background-modifier-hover);
+}
+
+.link-timeline-expand-toggle {
+    width: 20px;
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    text-align: center;
+    transition: transform 0.2s ease;
+}
+
+.link-timeline-expand-toggle.has-children {
+    color: var(--text-normal);
+}
+
+.link-timeline-expand-toggle.expanded {
+    transform: rotate(0deg);
+}
+
+.link-timeline-icon {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.link-timeline-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.link-timeline-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.link-timeline-details strong {
+    font-size: 14px;
+}
+
+.link-timeline-time {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: var(--font-monospace);
+}
+
+.link-timeline-card-id {
+    color: var(--text-accent);
+    font-size: 11px;
+    font-family: var(--font-monospace);
+    font-weight: 600;
+}
+
+.link-timeline-value {
+    font-size: 13px;
+    color: var(--text-normal);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.link-timeline-tactic,
+.link-timeline-technique {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.link-timeline-count {
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.link-timeline-children {
+    margin-left: 30px;
+    padding-left: 16px;
+    border-left: 2px solid var(--background-modifier-border);
+}
+
+.link-timeline-child {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    border-left: 3px solid;
+    border-radius: 4px;
+    background: var(--background-primary);
+    transition: background 0.2s ease;
+}
+
+.link-timeline-child:hover {
+    background: var(--background-modifier-hover);
+}
+
+.link-timeline-connector {
+    display: none;
+}
+
+.link-timeline-role-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.link-timeline-role-badge.role-parent {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.link-timeline-role-badge.role-child {
+    background: #e67e22;
+    color: #fff;
+}
+
+/* Depth-based indentation for hierarchical nesting */
+.link-timeline-child.depth-0 {
+    margin-left: 0px;
+}
+
+.link-timeline-child.depth-1 {
+    margin-left: 30px;
+}
+
+.link-timeline-child.depth-2 {
+    margin-left: 60px;
+}
+
+.link-timeline-child.depth-3 {
+    margin-left: 90px;
+}
+
+.link-timeline-child.depth-4 {
+    margin-left: 120px;
+}
+
+/* Nested parent groups (children that are also parents) */
+.link-timeline-nested-parent {
+    background: var(--background-primary-alt);
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+/* Container for nested children */
+.link-timeline-nested-children {
+    padding-left: 0;
+    margin-top: 8px;
+}
+
+/* Link Timeline Error Section */
+.link-timeline-error-section {
+    margin-top: 40px;
+    padding: 20px;
+    background: rgba(255, 100, 100, 0.05);
+    border: 1px solid rgba(255, 100, 100, 0.3);
+    border-radius: 8px;
+}
+
+.link-timeline-error-header {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-error);
+    margin-bottom: 8px;
+}
+
+.link-timeline-error-description {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    line-height: 1.4;
+}
+
+.link-timeline-error-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin-bottom: 8px;
+    background: var(--background-primary);
+    border-left: 3px solid var(--text-error);
+    border-radius: 6px;
+}
+
+.link-timeline-error-item .link-timeline-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.link-timeline-error-item .link-timeline-details {
+    flex: 1;
 }

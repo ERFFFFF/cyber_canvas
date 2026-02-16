@@ -6,25 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cyber Canvas is an Obsidian plugin for cybersecurity forensic analysis. It adds IOC (Indicators of Compromise) card types with SVG icons to Obsidian's Canvas view, plus MITRE ATT&CK framework integration for technique mapping and validation. Features include time-based timeline analysis, comprehensive MITRE matrix visualization, and export to MITRE ATT&CK Navigator format. Targeted at security analysts and threat hunters.
 
-## Recent Simplifications (2026-02-15)
+## Recent Changes
 
-The codebase underwent significant simplification and documentation improvements:
+**Timeline Features (2026-02-16):**
+- Implemented Graph Timeline with drag-to-zoom (Splunk-like interaction), manual time range inputs, viewport-based filtering, and two-line axis timestamps (`YYYY-MM-DD\nHH:MM:SS`)
+- Implemented Link Timeline with hierarchical parent-child grouping, arrow-based relationship detection, expandable nested structures (parent→child→grandchild), and error detection for Child→Parent arrow violations
+- Refactored copy button behavior: removed global copy, added tab-specific buttons (Time: copy all, Graph: copy filtered range, Link: no copy), implemented time range filtering in `generateCopyText()`
+- Refined error detection logic: P→P arrows now allowed, only C→P arrows flagged as errors
+- Created 4 new timeline modules: `GraphTimelineTab.ts`, `LinkTimelineTab.ts`, `LinkTimelineProcessing.ts`, `TimelineCopyExport.ts`
 
-**Code Reduction:**
-- **MITRE data handling:** Removed embedded fallback dataset (MitreData.ts, 547 lines) and preprocessing script (parse-mitre-stix.js, 144 lines). MitreLoader now requires enterprise-attack.json and parses STIX bundles directly at runtime.
-- **Debug logging:** Consolidated from 87+ scattered log statements to focused console.debug() calls with clear prefixes ([IOCParser], [MitreModal], [MitreLoader]).
-- **Severity helpers:** Extracted reusable methods `isCriticalSeverity()`, `getSeverityIcon()`, `applySeverityClass()` to eliminate repeated conditionals (~25 lines net reduction).
-- **Toggle expansion:** Unified `toggleTechniqueExpansion()` and `toggleSubtechniqueExpansion()` into single `toggleExpansion()` method (~58 lines net reduction).
-- **Button creation:** Extracted `createToolbarButton()` helper for canvas control bar buttons (~20 lines net reduction).
-- **Module-level constants:** Moved `TACTIC_ABBREVIATIONS` to module scope in MitreLoader to prevent recreation on each call.
+**Folder Reorganization (2026-02-15):**
+Organized all 30 source files into 6 subdirectories (`types/`, `canvas/`, `parsing/`, `timeline/`, `mitre/`, `settings/`). Split 3 large files: `main.ts` (494→132 lines), `IOCParser.ts` (389→97 lines), `RenderMitreModal.ts` (936→246 lines). Created 11 new single-responsibility modules. All files now under 562 lines. Class methods converted to exported free functions with context interfaces (`ToolbarContext`, `MitreModalContext`).
 
-**Documentation Improvements:**
-- **Comprehensive inline comments:** Added detailed explanations to complex algorithms (MITRE aggregation STEPS 1-5, STIX parsing, coordinate math for resize handles).
-- **JSDoc blocks:** Enhanced with @param, @returns, and algorithm overview sections.
-- **Section dividers:** Added visual separators (-------) to break up long functions into logical blocks.
-- **Comment ratio:** Maintained 16-20% across all files while adding detailed explanations.
-
-**Total impact:** ~293 lines removed through consolidation, zero functional changes, improved readability and maintainability.
+**Previous Changes (2026-02-15):**
+- Split `RenderMitreModal.ts` (2,112 lines) into 8 modules, then further into 12 modules
+- Removed dead code: MitreData.ts (547 lines), parse-mitre-stix.js (144 lines), DiagnosticTests.ts (315 lines), IOCCardFactory.ts (79 lines)
+- Added comprehensive inline documentation (15-20% comment ratio across all files)
 
 ## Build Commands
 
@@ -38,30 +35,51 @@ The build outputs `main.js` directly in the project root (consumed by Obsidian).
 
 ## Architecture
 
-**Entry point:** `src/main.ts` — `IOCCanvasPlugin` extends Obsidian's `Plugin` class. Registers commands, ribbon icons, canvas context menu items, and injects buttons into Obsidian's native `.canvas-controls` bar on `active-leaf-change`. Creates IOC cards as canvas text nodes via the internal canvas API (`canvas.createTextNode()`).
+**Entry point:** `src/main.ts` — `IOCCanvasPlugin` extends Obsidian's `Plugin` class. Thin plugin shell that registers commands, ribbon icons, settings, and delegates to extracted modules in `canvas/`.
 
-**IOC Type System:**
-- `IOCCardsTypes.ts` — Defines the `IOC_TYPES` constant (16 types: IP Address, Domain, File Hash, URL, Email, Hostname, YARA Rule, Sigma Rule, Registry Key, Process Name, Network, Command Line, File, Note, DLL, C2). Each type has `name`, `icon`, `color`, `fields[]`, `svg`, and optional `os_icons` (Hostname has Windows/macOS/Linux variants).
-- `IOCCardFactory.ts` — Static CRUD helper for runtime manipulation of `IOC_TYPES`.
-- `RenderIOCCards.ts` — Generates markdown content for new IOC cards (HTML header with inline SVG + markdown fields with blank lines for user input + timestamp/Splunk/MITRE fields). Field values are entered by users in the blank space after field labels. **No separators are included in the template** - users type values directly after field labels, and the parser uses the next field or metadata section as the delimiter. Called by `main.ts` `createIOCCard()` method. **All IOC cards now include two MITRE fields**: "Mitre Tactic: " and "Mitre Technique: " for analyst input.
+**Canvas Modules (`src/canvas/`):**
+- `CanvasToolbar.ts` — SVG icon constants, `ToolbarContext` interface, `addCanvasButtons(ctx)` and `createToolbarButton()`. Injects 4 buttons (Timeline, Add Card, Reduce, MITRE) into Obsidian's native `.canvas-controls` bar.
+- `CanvasSelection.ts` — `getSelectedTechniqueId(app)` extracts MITRE technique ID from selected canvas node. Tries 3 approaches to find selection.
+- `ReduceView.ts` — `toggleReduceView(app, isReducedView)` returns new state. Adds/removes `.ioc-reduced` class and resizes nodes to 60px/original height.
+- `IOCCardCreation.ts` — `openIOCCardSelector(app, callback)` and `createIOCCard(app, iocTypeId, osType?)`. Creates canvas text nodes via internal canvas API.
+- `RenderIOCCards.ts` — Generates markdown content for new IOC cards (HTML header with inline SVG + markdown fields + MITRE fields). **All IOC cards include "Mitre Tactic:" and "Mitre Technique:" fields.**
+- `RenderIOCCardsModal.ts` — IOC type selector grid with auto-scaling columns (sqrt-based). Hostname type triggers OS selector sub-view.
 
-**Shared IOC Parsing:**
-- `IOCParser.ts` — Shared module that extracts IOC data from canvas node markdown text. Used by timeline processors and MITRE modal. Exports `parseIOCNode()` and `IOCNodeData` interface. Handles IOC type detection (order-dependent regex), value extraction (looks for content between field label and next delimiter - either `-----` separator or next field label or "Time of Event"), time/Splunk/MITRE field parsing, and icon/color lookup from `IOC_TYPES`. **Includes extensive debug logging** for troubleshooting value extraction issues. **Enhanced with MITRE support** - extracts "Mitre Tactic" and "Mitre Technique" fields from IOC cards. **CRITICAL**: MITRE field extraction uses `[ \t]*` (spaces/tabs only) instead of `\s*` to avoid matching newlines - prevents regex from skipping empty fields and capturing the next field's content.
+**Type System (`src/types/`):**
+- `IOCCardsTypes.ts` — `IOC_TYPES` constant (16 types with name, icon, color, fields[], svg, optional os_icons).
+- `IOCNodeData.ts` — `IOCNodeData` interface (id, type, value, time, splunkQuery, tactic, technique, icon, color).
 
-**Timeline Processing:**
-- `TimeTimelineProcessing.ts` — Extracts IOC data from canvas nodes via shared `IOCParser`, returns flat array for chronological sorting by "Time of Event" field. **Includes comprehensive debug logging** tracking node processing, IOC detection, value extraction success/failure, and summary statistics.
+**Parsing Modules (`src/parsing/`):**
+- `IOCParser.ts` — Orchestrator that imports from detection/extractors/visuals below. Exports `parseIOCNode()` and re-exports `IOCNodeData`.
+- `IOCTypeDetection.ts` — `IOC_TYPE_PATTERNS` array and `detectIOCType(text)`. Pattern order matters: specific before generic (e.g., "File Hash" before "File").
+- `IOCFieldExtractors.ts` — All `extract*` functions (value, time, splunk, MITRE, cardId). **CRITICAL**: MITRE field extraction uses `[ \t]*` (spaces/tabs only) instead of `\s*` to avoid matching newlines.
+- `IOCVisualLookup.ts` — `lookupTypeVisuals(iocType)` searches `IOC_TYPES` for SVG icon and color.
 
-**MITRE ATT&CK Integration (NEW):**
-- `MitreLoader.ts` — Asynchronous dataset loader that parses STIX 2.1 bundle format directly from `MITRE/enterprise-attack.json`. Extracts tactics (`x-mitre-tactic` objects) and techniques (`attack-pattern` objects) with full validation. **Requires enterprise-attack.json** - throws error if unavailable. Implements caching. Exports `validateTechniqueTactic()` which performs severity-level validation (valid/unknown_technique/unknown_tactic/mismatch/empty_tactic). **Comprehensive abbreviation support** includes short forms like "EX" (Execution), "CA" (Credential Access), "DE" (Defense Evasion), etc. Includes step-by-step debug logging.
-- `RenderMitreModal.ts` — Full-screen modal displaying complete MITRE ATT&CK matrix (all 14 tactics as columns, all techniques from dataset). Aggregates IOC card MITRE tactic/technique fields and validates technique-tactic pairings with severity indicators (green=valid, orange=warning, red=error, gray=unfound). Features: expandable techniques with subtechniques, description truncation with expand/collapse, count badges for found techniques, **validation error categories** (Missing Tactic, Unknown Tactic, Technique Errors, Validation Mismatches), export to MITRE ATT&CK Navigator JSON format (importable at https://mitre-attack.github.io/attack-navigator/). Includes 8-handle resizable modal UI with comprehensive debug logging.
+**Timeline (`src/timeline/`, 6 modules):**
+- `TimeTimelineProcessing.ts` — Extracts IOC data via `IOCParser`, returns flat array for chronological sorting by "Time of Event" field. Used by Time Timeline tab.
+- `GraphTimelineTab.ts` — Horizontal dot timeline with drag-to-zoom. Renders interactive axis with colored dots, selection overlay, manual time inputs, and filtered card list. Edge padding (8%), two-line timestamps, viewport-based positioning.
+- `LinkTimelineTab.ts` — Hierarchical parent-child timeline renderer. Displays expandable groups with role badges ([P]/[C]), nested structures (depth-based indentation), and error section for Child→Parent arrow violations.
+- `LinkTimelineProcessing.ts` — Parent-child grouping algorithm from canvas edges. Builds `ParentChildGroup` hierarchy, detects root parents, recursively nests children, validates arrow directions (flags C→P, allows P→P). Returns `LinkTimelineResult` with groups + error cards.
+- `TimelineCopyExport.ts` — Tab-separated text generator for clipboard export. Supports optional time range filtering (`startTime`/`endTime`) for Graph Timeline's filtered copy. Format: `Time\tTactic\tTechnique\tValue`.
+- `RenderTimelinesModal.ts` — Full-screen modal orchestrator. Creates tab bar (Time/Graph/Link), renders tab-specific content, manages tab switching, handles IOC data extraction and edge loading.
 
-**UI/Modals:**
-- `RenderTimelinesModal.ts` — Full-screen modal with **time-based timeline only** (link timeline removed). Renders chronological sorted cards by "Time of Event" field. Uses recursive rendering for tree structure.
-- `RenderIOCCardsModal.ts` — IOC type selector grid with auto-scaling columns (sqrt-based). Hostname type triggers a secondary OS selector sub-view. Callback creates actual canvas text nodes.
-- `RenderMitreModal.ts` — (Documented above in MITRE section)
+**MITRE ATT&CK Integration (`src/mitre/`, 12 modules):**
+- `MitreTypes.ts` — Shared interfaces (`MitreTechnique`, `MitreTactic`, `SearchState`, `ValidationError`, `SeverityLevel`). Foundation, no deps.
+- `MitreTextUtils.ts` — `cleanDescription()` and `truncateDescription()`. Removes markdown links and citation brackets.
+- `MitreSeverity.ts` — `isCriticalSeverity()`, `getSeverityIcon()`, `applySeverityClass()`, `shouldOverrideSeverity()`. Severity ranking: unknown_technique (5) > unknown_tactic (4) > empty_tactic (3) > mismatch (2) > valid (1).
+- `MitreSearch.ts` — `parseSearchQuery()`, `matchesSearch()` (4-level hierarchy: ID > name > description > subtechniques), `highlightMatches()`.
+- `MitreAggregator.ts` — 5-step IOC-to-MITRE matrix aggregation. Exports `aggregateTacticsTechniques()`, `extractTechniqueId()`, `extractTechniqueName()`.
+- `MitreExport.ts` — `exportToNavigator()` takes pre-computed tactics (what-you-see-is-what-you-export).
+- `MitreResizable.ts` — `makeResizable(modal)` with 8 drag handles (corners + edges).
+- `MitreLoader.ts` — STIX 2.1 bundle parser from `MITRE/enterprise-attack.json`. Caching, `validateTechniqueTactic()`, abbreviation support.
+- `MitreModalHelpers.ts` — `MitreModalContext` interface (replaces `this` for extracted functions), `isActiveTechnique()`, `toggleExpansion()`.
+- `MitreModalTacticRenderer.ts` — `renderTacticSection()`, `renderSubtechniques()`, `createCountBadgeWithTooltip()`.
+- `MitreModalValidation.ts` — `renderValidationErrors()` with grouped error categories (Missing Tactic, Unknown Tactic, Technique Errors, Mismatches).
+- `MitreModalSearch.ts` — `SearchUIElements` interface, `renderSearchBar()`, `handleSearchInput()` with debounced re-render.
+- `RenderMitreModal.ts` — Class shell with lifecycle (onOpen/onClose), `getContext()` builder, `renderMitreMapping()`. Orchestrates all modules above.
 
-**Settings:**
-- `PluginSettings.ts` — Single settings tab (card size, timeline button toggle). Registered in `main.ts`.
+**Settings (`src/settings/`):**
+- `PluginSettings.ts` — Single settings tab (card size, timeline button toggle).
 
 **Canvas Integration:** The plugin accesses Obsidian's internal canvas API via `(activeView as any).canvas`. Key APIs used:
 - `canvas.nodes` (Map) and `canvas.edges` (Map) — for reading node/edge data
@@ -92,9 +110,9 @@ All source files follow comprehensive inline documentation practices:
 
 **Complex Areas with Detailed Commentary:**
 - **IOCParser field extraction** - Delimiter precedence logic (separator → next field → Time of Event)
-- **MITRE aggregation STEPS 1-5** in RenderMitreModal - Full matrix building with found/unfound techniques
+- **MITRE aggregation STEPS 1-5** in MitreAggregator - Full matrix building with found/unfound techniques
 - **STIX 2.1 bundle parsing** in MitreLoader - Two-pass algorithm explanation (tactics first, then techniques)
-- **Canvas button injection** and reduce view toggle in main.ts - DOM manipulation and height restoration
+- **Canvas button injection** in CanvasToolbar.ts and **reduce view toggle** in ReduceView.ts - DOM manipulation and height restoration
 - **Resize handle coordinate math** - Delta calculations for 8-handle resizable modal
 - **Search hierarchy** - Precedence ordering (ID → name → description → subtechniques)
 
@@ -106,9 +124,12 @@ All source files follow comprehensive inline documentation practices:
 
 ## Key Patterns
 
-- **Severity-based validation:** Use `isCriticalSeverity()` helper instead of repeated `severity === 'unknown_technique' || ...` checks. Severity ranking: unknown_technique (5) > unknown_tactic (4) > empty_tactic (3) > mismatch (2) > valid (1).
+- **Severity-based validation:** Use `isCriticalSeverity()` from `MitreSeverity.ts` instead of repeated `severity === 'unknown_technique' || ...` checks. Severity ranking: unknown_technique (5) > unknown_tactic (4) > empty_tactic (3) > mismatch (2) > valid (1).
 - **Modal expansion:** Use `toggleExpansion(element, subtechniques?)` for both parent techniques and subtechniques instead of separate toggle methods.
-- **Toolbar buttons:** Use `createToolbarButton(label, svgIcon, onClick)` helper instead of manual DOM construction for canvas control bar buttons.
+- **Toolbar buttons:** Use `createToolbarButton(label, svgIcon, onClick)` from `canvas/CanvasToolbar.ts` instead of manual DOM construction.
+- **Context interfaces:** Extracted functions receive context objects instead of `this`. `ToolbarContext` (in `CanvasToolbar.ts`) provides app + callbacks for toolbar buttons. `MitreModalContext` (in `MitreModalHelpers.ts`) provides state + callbacks for modal rendering functions.
+- **MITRE module boundaries:** Each MITRE module is a set of exported free functions (not class methods). `MitreAggregator.aggregateTacticsTechniques()` takes `(iocData, dataset)` and returns an `AggregationResult` struct. `MitreExport.exportToNavigator()` takes pre-computed `(tactics, iocCount, dataset)` for what-you-see-is-what-you-export. `MitreSearch.matchesSearch()` takes `subtechniquesMap` as a parameter instead of reading from `this`.
+- **Link Timeline error detection:** Use `incomingFrom` Map to track arrow sources, check if ANY incoming source is a [C] card. P→P arrows allowed (attack chain progression), C→P arrows flagged (violates convention). Pattern: `for (const sourceId of incomingSources) { if (nodeMap.get(sourceId)?.isChild) { ... } }`.
 - IOC card content is **markdown with embedded HTML** for the header. IOCParser detects IOC types by regex-matching type names (e.g., `/IP Address/i`) against node text content — pattern order matters (e.g., "File Hash" must match before "File").
 - **IOC card field format**: Cards are created with field labels followed by blank lines for user input. Users type values after the field labels. The parser extracts the **first field's value** as the primary "value" for timeline display (e.g., for Hostname cards, the "hostname" field is extracted; for File Hash cards, the "hash" field). No separators are included in the card template - the parser uses the next field label or "Time of Event:" as the delimiter.
 - **MITRE field parsing**: IOC cards include "Mitre Tactic: " and "Mitre Technique: " fields. IOCParser extracts these using flexible pattern matching with `[ \t]*` (spaces/tabs only, NOT `\s*`) to prevent regex from matching across newlines. Technique field supports multiple formats: "T1566", "T1566.001", "T1566 - Phishing", "Phishing (T1566)", or plain name "Phishing". Tactic field supports display names, short names, or abbreviations (e.g., "EX" for Execution, "CA" for Credential Access).
@@ -119,8 +140,8 @@ All source files follow comprehensive inline documentation practices:
 - **Debug logging**: Extensive console.debug() output tracks the entire parsing and rendering pipeline from card creation through value extraction to timeline/MITRE display. Check the browser console when investigating value display or validation issues.
 - Colors are defined per-IOC-type and applied via inline CSS variables and styles throughout the UI.
 - The plugin uses Obsidian's `createEl`/`createDiv` DOM API for building UI, not frameworks.
-- Plugin buttons (Timeline, Add Card, Reduce, MITRE) are injected into Obsidian's native `.canvas-controls` bar as `.ioc-toolbar` > `.canvas-control-item` > `.clickable-icon` elements to match the native canvas button style.
-- **Reduce toggle**: The "Reduce" button in the toolbar toggles `isReducedView` state. When ON, adds `.ioc-reduced` class to the canvas wrapper (CSS hides headers/metadata, shows only field values) and resizes nodes to 60px height. When OFF, removes the class and restores original node heights. Original heights are stored as `node._iocOriginalHeight`.
+- Plugin buttons (Timeline, Add Card, Reduce, MITRE) are injected via `canvas/CanvasToolbar.ts` into Obsidian's native `.canvas-controls` bar as `.ioc-toolbar` > `.canvas-control-item` > `.clickable-icon` elements.
+- **Reduce toggle**: `canvas/ReduceView.ts` exports `toggleReduceView(app, isReducedView)` which returns the new state. When ON, adds `.ioc-reduced` class and resizes nodes to 60px. When OFF, restores original heights from `node._iocOriginalHeight`.
 - All styles are in `styles.css` (uses Obsidian CSS variables like `--background-primary`, `--interactive-accent`). **MITRE modal styles** (~500 lines, lines 285-764) include full-screen modal wrapper, tactic columns, technique items with validation states, expandable subtechniques, resize handles, and responsive breakpoints.
 - SVG icons are inline strings in `IOCCardsTypes.ts`, not loaded from the `icons/` directory (which contains standalone PNG/SVG files).
 
@@ -197,24 +218,84 @@ The plugin includes comprehensive MITRE ATT&CK framework integration for threat 
 
 ```
 src/
-├── main.ts                      # Entry point (434 lines, 96 comments, 22%) - plugin initialization, canvas button injection, reduce view
-├── IOCParser.ts                 # Shared parsing (398 lines, 97 comments, 24%) - IOC detection, value/time/MITRE extraction
-├── TimeTimelineProcessing.ts    # Time-based timeline (79 lines, 17 comments, 22%) - chronological IOC sorting
-├── RenderTimelinesModal.ts      # Timeline modal (131 lines, 28 comments, 21%) - time-based timeline UI only
-├── RenderMitreModal.ts          # MITRE modal (1,798 lines, 348 comments, 19%) - full matrix visualization + Navigator export
-├── MitreLoader.ts               # Dataset loader (388 lines, 108 comments, 28%) - STIX 2.1 bundle parser
-├── RenderIOCCards.ts            # Card generation (73 lines, 27 comments, 37%) - markdown template with MITRE fields
-├── RenderIOCCardsModal.ts       # IOC selector (138 lines, 23 comments, 17%) - type picker grid
-├── IOCCardsTypes.ts             # Type definitions (288 lines, 36 comments, 13%) - 16 IOC types with icons/colors
-├── IOCCardFactory.ts            # CRUD helpers (79 lines, 24 comments, 30%) - IOC_TYPES manipulation
-└── PluginSettings.ts            # Settings tab (69 lines, 18 comments, 26%) - card size, timeline toggle
+├── main.ts                              # Plugin shell (132 lines) - lifecycle, settings, canvas button injection
+├── debug.ts                             # Debug flag (2 lines) - controls console.debug() output
+│
+├── types/
+│   ├── IOCCardsTypes.ts                 # IOC type definitions (286 lines) - 16 types with icons/colors/fields
+│   └── IOCNodeData.ts                   # IOCNodeData interface (35 lines) - parsed IOC card data shape
+│
+├── canvas/
+│   ├── CanvasToolbar.ts                 # Toolbar injection (141 lines) - addCanvasButtons, SVG icons, ToolbarContext
+│   ├── CanvasSelection.ts              # Selection helper (88 lines) - getSelectedTechniqueId from canvas
+│   ├── ReduceView.ts                    # Reduce toggle (85 lines) - toggleReduceView, node height management
+│   ├── IOCCardCreation.ts              # Card creation (90 lines) - openIOCCardSelector, createIOCCard
+│   ├── RenderIOCCards.ts               # Card templates (72 lines) - markdown generation with MITRE fields
+│   └── RenderIOCCardsModal.ts          # IOC selector modal (122 lines) - type picker grid, OS sub-view
+│
+├── parsing/
+│   ├── IOCParser.ts                     # Parser orchestrator (97 lines) - parseIOCNode, re-exports IOCNodeData
+│   ├── IOCTypeDetection.ts             # Type detection (69 lines) - IOC_TYPE_PATTERNS, detectIOCType
+│   ├── IOCFieldExtractors.ts           # Field extraction (240 lines) - extractValue/Time/Splunk/Mitre/CardId
+│   └── IOCVisualLookup.ts              # Visual lookup (37 lines) - lookupTypeVisuals from IOC_TYPES
+│
+├── timeline/
+│   ├── TimeTimelineProcessing.ts       # Timeline processor (79 lines) - chronological IOC sorting
+│   ├── GraphTimelineTab.ts             # Graph timeline (434 lines) - drag-to-zoom, axis rendering, filtering
+│   ├── LinkTimelineTab.ts              # Link timeline (305 lines) - hierarchical parent-child rendering
+│   ├── LinkTimelineProcessing.ts       # Link grouping (195 lines) - arrow-based hierarchy, error detection
+│   ├── TimelineCopyExport.ts           # Copy export (42 lines) - tab-separated text generation
+│   └── RenderTimelinesModal.ts         # Timeline modal (197 lines) - tab orchestration, 3-mode UI
+│
+├── mitre/
+│   ├── MitreTypes.ts                    # Shared interfaces (88 lines) - foundation, no deps
+│   ├── MitreTextUtils.ts               # Description utils (58 lines) - cleanDescription, truncateDescription
+│   ├── MitreSeverity.ts                # Severity helpers (74 lines) - isCriticalSeverity, applySeverityClass
+│   ├── MitreSearch.ts                   # Search engine (204 lines) - parseSearchQuery, matchesSearch, highlight
+│   ├── MitreAggregator.ts              # Matrix aggregation (562 lines) - 5-step IOC-to-MITRE algorithm
+│   ├── MitreExport.ts                   # Navigator export (129 lines) - JSON layer file generation
+│   ├── MitreResizable.ts               # Modal resize (129 lines) - 8-handle drag-to-resize
+│   ├── MitreLoader.ts                   # Dataset loader (431 lines) - STIX 2.1 bundle parser
+│   ├── MitreModalHelpers.ts            # Context & utils (131 lines) - MitreModalContext, toggleExpansion
+│   ├── MitreModalTacticRenderer.ts     # Tactic renderer (386 lines) - renderTacticSection, subtechniques
+│   ├── MitreModalValidation.ts         # Validation UI (162 lines) - renderValidationErrors, error categories
+│   ├── MitreModalSearch.ts             # Search UI (169 lines) - renderSearchBar, handleSearchInput
+│   └── RenderMitreModal.ts             # Modal orchestrator (246 lines) - class shell, lifecycle, getContext
+│
+└── settings/
+    └── PluginSettings.ts                # Settings tab (68 lines) - card size, timeline toggle
 
 MITRE/
-└── enterprise-attack.json       # Official STIX 2.1 bundle (50MB+, ~800+ techniques, download from attack.mitre.org)
+└── enterprise-attack.json               # Official STIX 2.1 bundle (50MB+, ~800+ techniques)
 
-styles.css                       # All styling (859 lines) - IOC cards, timelines, MITRE modal
-manifest.json                    # Obsidian plugin manifest
-esbuild.config.mjs              # Build configuration
+styles.css                               # All styling (1,285 lines) - IOC cards, timelines, MITRE modal
+manifest.json                            # Obsidian plugin manifest
+esbuild.config.mjs                      # Build configuration
 ```
 
-**Total:** 3,875 lines TypeScript (782 comment lines, 20.2% average ratio across all files)
+**Module dependency graph (arrows point upward to dependents):**
+```
+debug.ts, types/IOCNodeData.ts, types/IOCCardsTypes.ts     <- leaf modules (no deps)
+    ↑
+parsing/IOCTypeDetection.ts, IOCFieldExtractors.ts, IOCVisualLookup.ts
+    ↑
+parsing/IOCParser.ts                                        <- orchestrator
+    ↑
+timeline/TimeTimelineProcessing.ts, timeline/RenderTimelinesModal.ts
+    ↑
+mitre/MitreTypes.ts, MitreTextUtils.ts, MitreResizable.ts  <- leaf MITRE modules
+    ↑
+mitre/MitreSeverity.ts, MitreSearch.ts, MitreLoader.ts
+    ↑
+mitre/MitreAggregator.ts, MitreExport.ts
+    ↑
+mitre/MitreModalHelpers.ts, MitreModalTacticRenderer.ts, MitreModalValidation.ts, MitreModalSearch.ts
+    ↑
+mitre/RenderMitreModal.ts                                   <- top of MITRE tree
+    ↑
+canvas/CanvasToolbar.ts, CanvasSelection.ts, ReduceView.ts, IOCCardCreation.ts
+    ↑
+main.ts                                                      <- entry point
+```
+
+**Total:** ~5,792 lines TypeScript across 34 files (largest: MitreAggregator.ts at 562 lines)

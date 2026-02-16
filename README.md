@@ -33,19 +33,82 @@ A comprehensive Obsidian plugin that transforms Canvas into a powerful cybersecu
 
 ### Timeline Analysis
 
-**Time-Based Timeline:**
+The plugin provides three complementary timeline views accessible via the toolbar clock icon:
 
-- Chronological sorting by "Time of Event" field
+#### **1. Time Timeline**
+
+Chronological view of all IOC cards sorted by "Time of Event" field.
+
+**Features:**
+- Automatic sorting (earliest to latest)
 - Visual connectors with color gradients between consecutive IOCs
+- Displays IOC value, time, Splunk query, and MITRE fields
 - Hover effects and card count indicators
+- **Copy Timeline** button exports all cards to clipboard (tab-separated format)
 
 ![Timeline Modal](images/timeline.png)
 
-**Features:**
+#### **2. Graph Timeline**
 
-- Automatic sorting (earliest to latest)
-- Gradient connectors blend consecutive IOC colors
-- Displays IOC value, time, Splunk query, and MITRE fields
+Interactive horizontal timeline with drag-to-zoom functionality (Splunk-style).
+
+**Features:**
+- **Visual timeline axis** with colored dots for each IOC event
+- **Drag-to-zoom:** Click and drag on the axis to select a time range and zoom in
+- **Manual time entry:** Type specific start/end dates to zoom to exact ranges
+- **Full timestamps:** Axis labels show `YYYY-MM-DD HH:MM:SS` format (two lines)
+- **Reset button:** Return to full data range view
+- **Filtered card list:** Shows only cards within current zoom range
+- **Copy Filtered Range** button exports visible cards only
+
+**Use cases:**
+- Analyze specific time windows in detail
+- Filter out noise during long investigations
+- Focus on burst activity patterns
+
+#### **3. Link Timeline**
+
+Hierarchical view showing parent-child relationships based on canvas arrows.
+
+**Features:**
+- **Arrow-based grouping:** Cards connected by arrows are grouped together
+- **Hierarchical nesting:** Supports parent → child → grandchild structures
+- **Expand/collapse:** Click parent cards to show/hide their children
+- **Role badges:** [P] for parent cards, [C] for child cards
+- **Count badges:** Show number of children per parent
+- **Error detection:** Identifies Child→Parent arrow violations (see Arrow Conventions below)
+
+**Use cases:**
+- Visualize attack progression chains (Initial Access → Execution → Persistence)
+- Track multi-stage campaigns with nested artifacts
+- Validate arrow directions during analysis
+
+---
+
+#### **Arrow Conventions**
+
+The Link Timeline uses directional arrows to represent relationships:
+
+**Valid Arrow Patterns:**
+- **Parent → Child (P→C):** Standard parent-child relationship. Parent appears as group header with children nested below.
+- **Parent → Parent (P→P):** Attack chain progression. Both cards appear as separate root groups.
+- **Child → Child (C→C):** Sibling relationship or nested chain.
+
+**Invalid Pattern (Flagged as Error):**
+- **Child → Parent (C→P):** Violates directional convention. Child cards should not point to parent cards. These appear in the "⚠️ Cards with Child→Parent Arrows" error section.
+
+**How to Fix Errors:**
+1. Identify flagged cards in the error section
+2. Return to canvas and locate the incorrect arrow
+3. Delete the Child→Parent arrow
+4. Redraw as Parent→Child (reverse direction)
+5. Refresh timeline to verify fix
+
+**Best Practices:**
+- Mark cards with [P] or [C] badges in their titles to indicate intended role
+- Draw arrows in the direction of attack progression (cause → effect)
+- Use Parent→Parent arrows for sequential attack stages
+- Use Parent→Child arrows for artifacts within a stage
 
 ---
 

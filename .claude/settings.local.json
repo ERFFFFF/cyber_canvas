@@ -8,7 +8,8 @@
       "Bash(npm run parse-mitre:*)",
       "Bash(cd:*)",
       "Bash(wc:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(git mv:*)"
     ]
   }
 }

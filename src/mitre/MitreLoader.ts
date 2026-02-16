@@ -6,6 +6,7 @@
  */
 
 import { App } from 'obsidian';
+import { DEBUG } from '../debug';
 
 export interface MitreDataset {
     version: string;
@@ -56,7 +57,7 @@ const TACTIC_ABBREVIATIONS: Record<string, string[]> = {
  */
 export async function loadMitreDataset(app: App): Promise<MitreDataset> {
     if (cachedDataset) {
-        console.debug('[MitreLoader] Returning cached dataset');
+        if (DEBUG) console.debug('[MitreLoader] Returning cached dataset');
         return cachedDataset;
     }
 
@@ -65,7 +66,7 @@ export async function loadMitreDataset(app: App): Promise<MitreDataset> {
         const adapter = app.vault.adapter;
         const jsonPath = '.obsidian/plugins/cyber_canvas/MITRE/enterprise-attack.json';
 
-        console.debug('[MitreLoader] Attempting to load from:', jsonPath);
+        if (DEBUG) console.debug('[MitreLoader] Attempting to load from:', jsonPath);
 
         if (await adapter.exists(jsonPath)) {
             const content = await adapter.read(jsonPath);
@@ -73,7 +74,7 @@ export async function loadMitreDataset(app: App): Promise<MitreDataset> {
 
             // Check if it's a STIX bundle
             if (stixBundle.type === 'bundle' && Array.isArray(stixBundle.objects)) {
-                console.debug('[MitreLoader] Parsing STIX 2.1 bundle format...');
+                if (DEBUG) console.debug('[MitreLoader] Parsing STIX 2.1 bundle format...');
                 cachedDataset = parseStixBundle(stixBundle);
                 console.log('[MitreLoader] ✓ Loaded full dataset from STIX bundle. Tactics:', Object.keys(cachedDataset.tactics).length, 'Techniques:', Object.keys(cachedDataset.techniques).length);
                 return cachedDataset;
@@ -128,7 +129,7 @@ export async function loadMitreDataset(app: App): Promise<MitreDataset> {
  * @returns Normalized MitreDataset with tactics and techniques indexed by ID
  */
 function parseStixBundle(stixBundle: any): MitreDataset {
-    console.debug('[MitreLoader] Parsing STIX bundle with', stixBundle.objects?.length, 'objects');
+    if (DEBUG) console.debug('[MitreLoader] Parsing STIX bundle with', stixBundle.objects?.length, 'objects');
 
     const tactics: Record<string, TacticData> = {};
     const techniques: Record<string, TechniqueData> = {};
@@ -141,7 +142,7 @@ function parseStixBundle(stixBundle: any): MitreDataset {
         if (obj.type === 'x-mitre-collection') {
             version = obj.x_mitre_version || 'unknown';
             last_updated = obj.modified?.split('T')[0] || last_updated;
-            console.debug('[MitreLoader] Found collection metadata - version:', version, 'updated:', last_updated);
+            if (DEBUG) console.debug('[MitreLoader] Found collection metadata - version:', version, 'updated:', last_updated);
         }
     }
 
@@ -166,7 +167,7 @@ function parseStixBundle(stixBundle: any): MitreDataset {
         }
     }
 
-    console.debug('[MitreLoader] Parsed', Object.keys(tactics).length, 'tactics');
+    if (DEBUG) console.debug('[MitreLoader] Parsed', Object.keys(tactics).length, 'tactics');
 
     // Build tactic short name to ID map for technique processing
     // Example mapping: "initial-access" → "TA0001"
@@ -222,7 +223,7 @@ function parseStixBundle(stixBundle: any): MitreDataset {
         }
     }
 
-    console.debug('[MitreLoader] Parsed', Object.keys(techniques).length, 'techniques');
+    if (DEBUG) console.debug('[MitreLoader] Parsed', Object.keys(techniques).length, 'techniques');
 
     return {
         version,
@@ -308,12 +309,12 @@ export function normalizeTacticName(name: string, dataset: MitreDataset): string
     // Normalize: lowercase, remove spaces/dashes/underscores
     const normalized = name.toLowerCase().replace(/[\s\-_]+/g, '');
 
-    console.debug('[MitreLoader] Normalizing tactic:', name, '→', normalized);
+    if (DEBUG) console.debug('[MitreLoader] Normalizing tactic:', name, '→', normalized);
 
     // PASS 1: Check exact match against short_name (e.g., "credential-access")
     for (const [tacticId, tactic] of Object.entries(dataset.tactics)) {
         if (tactic.short_name.replace(/\-/g, '') === normalized) {
-            console.debug('[MitreLoader] ✓ Matched by short_name:', tactic.name, '(' + tacticId + ')');
+            if (DEBUG) console.debug('[MitreLoader] Matched by short_name:', tactic.name, '(' + tacticId + ')');
             return tacticId;
         }
     }
@@ -321,7 +322,7 @@ export function normalizeTacticName(name: string, dataset: MitreDataset): string
     // PASS 2: Check full name match (e.g., "Credential Access")
     for (const [tacticId, tactic] of Object.entries(dataset.tactics)) {
         if (tactic.name.toLowerCase().replace(/[\s\-_]+/g, '') === normalized) {
-            console.debug('[MitreLoader] ✓ Matched by full name:', tactic.name, '(' + tacticId + ')');
+            if (DEBUG) console.debug('[MitreLoader] Matched by full name:', tactic.name, '(' + tacticId + ')');
             return tacticId;
         }
     }
@@ -330,12 +331,12 @@ export function normalizeTacticName(name: string, dataset: MitreDataset): string
     const upper = name.toUpperCase().trim();
     for (const [tacticId, tactic] of Object.entries(dataset.tactics)) {
         if (tactic.abbreviations.includes(upper)) {
-            console.debug('[MitreLoader] ✓ Matched by abbreviation:', upper, '→', tactic.name, '(' + tacticId + ')');
+            if (DEBUG) console.debug('[MitreLoader] Matched by abbreviation:', upper, '→', tactic.name, '(' + tacticId + ')');
             return tacticId;
         }
     }
 
-    console.debug('[MitreLoader] ✗ No match found for:', name);
+    if (DEBUG) console.debug('[MitreLoader] No match found for:', name);
     return null;
 }
 
