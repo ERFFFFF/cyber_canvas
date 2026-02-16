@@ -28,10 +28,10 @@ __export(main_exports, {
   default: () => IOCCanvasPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // src/timeline/RenderTimelinesModal.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/debug.ts
 var DEBUG = false;
@@ -485,62 +485,45 @@ function parseIOCNode(node) {
 }
 
 // src/timeline/TimeTimelineProcessing.ts
-var TimeTimelineProcessor = class {
-  constructor(app, plugin, IOCCardsTypes) {
-    this.app = app;
-    this.plugin = plugin;
-    this.IOCCardsTypes = IOCCardsTypes;
+function extractFixedIOCData(app) {
+  if (DEBUG)
+    console.debug("[TimeProcessor] Starting extraction");
+  const activeLeaf = app.workspace.activeLeaf;
+  if (!activeLeaf || !activeLeaf.view || activeLeaf.view.getViewType() !== "canvas") {
+    if (DEBUG)
+      console.debug("[TimeProcessor] No active canvas view");
+    return [];
   }
-  /**
-   * Extract IOC data from all canvas text nodes for time-based timeline.
-   *
-   * Iterates over every node in the active canvas. Each node with a `text`
-   * property is parsed via the shared IOCParser. Nodes that match a known
-   * IOC type are included in the returned array.
-   *
-   * The caller (RenderTimelinesModal) sorts the result by time for display.
-   *
-   * DEBUG: Console logs show processing steps for troubleshooting.
-   *
-   * @returns Array of parsed IOC node data objects, unsorted
-   */
-  extractFixedIOCData() {
+  const canvasView = activeLeaf.view;
+  const canvas = canvasView.canvas;
+  if (!canvas || !canvas.nodes) {
     if (DEBUG)
-      console.debug("[TimeProcessor] Starting extraction");
-    const activeLeaf = this.app.workspace.activeLeaf;
-    if (!activeLeaf || !activeLeaf.view || activeLeaf.view.getViewType() !== "canvas") {
-      if (DEBUG)
-        console.debug("[TimeProcessor] No active canvas view");
-      return [];
-    }
-    const canvasView = activeLeaf.view;
-    const canvas = canvasView.canvas;
-    if (!canvas || !canvas.nodes) {
-      if (DEBUG)
-        console.debug("[TimeProcessor] No canvas or nodes");
-      return [];
-    }
-    const totalNodes = canvas.nodes.size || canvas.nodes.length || 0;
-    if (DEBUG)
-      console.debug("[TimeProcessor] Processing", totalNodes, "nodes");
-    const iocData = [];
-    let emptyValueCount = 0;
-    canvas.nodes.forEach((node) => {
-      if (node.text) {
-        const parsedData = parseIOCNode(node);
-        if (parsedData) {
-          if (!parsedData.value || !parsedData.value.trim()) {
-            emptyValueCount++;
-          }
-          iocData.push(parsedData);
+      console.debug("[TimeProcessor] No canvas or nodes");
+    return [];
+  }
+  const totalNodes = canvas.nodes.size || canvas.nodes.length || 0;
+  if (DEBUG)
+    console.debug("[TimeProcessor] Processing", totalNodes, "nodes");
+  const iocData = [];
+  let emptyValueCount = 0;
+  canvas.nodes.forEach((node) => {
+    if (node.text) {
+      const parsedData = parseIOCNode(node);
+      if (parsedData) {
+        if (!parsedData.value || !parsedData.value.trim()) {
+          emptyValueCount++;
         }
+        iocData.push(parsedData);
       }
-    });
-    if (DEBUG)
-      console.debug("[TimeProcessor] Extraction complete - found:", iocData.length, "IOCs,", emptyValueCount, "empty values");
-    return iocData;
-  }
-};
+    }
+  });
+  if (DEBUG)
+    console.debug("[TimeProcessor] Extraction complete - found:", iocData.length, "IOCs,", emptyValueCount, "empty values");
+  return iocData;
+}
+
+// src/timeline/TimeTimelineTab.ts
+var import_obsidian = require("obsidian");
 
 // src/timeline/TimelineCopyExport.ts
 function generateCopyText(iocData, startTime, endTime) {
@@ -558,9 +541,176 @@ function generateCopyText(iocData, startTime, endTime) {
   return [header, ...lines].join("\n");
 }
 
+// src/timeline/TimeTimelineTab.ts
+function renderTimeTimeline(container, iocData) {
+  if (DEBUG)
+    console.debug("[TimeTimeline] Starting render");
+  if (iocData.length === 0) {
+    container.createEl("p", {
+      text: "No IOC cards found in the current canvas. Create some IOC cards first to see the timeline.",
+      cls: "timeline-empty-message"
+    });
+    return;
+  }
+  const timeCopyBtn = container.createEl("button", {
+    text: "Copy Timeline",
+    cls: "timeline-copy-button"
+  });
+  timeCopyBtn.style.position = "absolute";
+  timeCopyBtn.style.top = "10px";
+  timeCopyBtn.style.right = "10px";
+  timeCopyBtn.addEventListener("click", () => {
+    const text = generateCopyText(iocData);
+    navigator.clipboard.writeText(text).then(() => {
+      new import_obsidian.Notice(`Copied ${iocData.length} entries to clipboard`);
+    });
+  });
+  const timelineContainer = container.createDiv("timeline-container");
+  iocData.forEach((ioc, index) => {
+    const timelineItem = timelineContainer.createDiv("timeline-item");
+    timelineItem.style.setProperty("--ioc-color", ioc.color);
+    timelineItem.style.setProperty("--ioc-color-30", `${ioc.color}30`);
+    timelineItem.style.background = `linear-gradient(135deg, ${ioc.color}15 0%, ${ioc.color}05 100%)`;
+    timelineItem.style.boxShadow = `0 4px 12px ${ioc.color}25`;
+    timelineItem.style.borderColor = ioc.color;
+    if (index < iocData.length - 1) {
+      const connector = timelineItem.createDiv("timeline-connector");
+      connector.style.background = `linear-gradient(180deg, ${ioc.color} 0%, ${iocData[index + 1].color} 100%)`;
+    }
+    const iconContainer = timelineItem.createDiv("timeline-icon");
+    iconContainer.innerHTML = ioc.icon;
+    iconContainer.style.background = `${ioc.color}20`;
+    iconContainer.style.borderColor = ioc.color;
+    const detailsContainer = timelineItem.createDiv("timeline-details");
+    const titleEl = detailsContainer.createEl("h3", { text: ioc.type });
+    titleEl.style.textShadow = `0 1px 3px ${ioc.color}40`;
+    const timeEl = detailsContainer.createDiv("timeline-time");
+    timeEl.textContent = `Time: ${ioc.time}`;
+    if (ioc.value && ioc.value.trim()) {
+      const valueEl = detailsContainer.createDiv("timeline-value");
+      valueEl.textContent = `Value: ${ioc.value}`;
+    }
+    if (ioc.splunkQuery && ioc.splunkQuery.trim()) {
+      const splunkEl = detailsContainer.createDiv("timeline-splunk");
+      splunkEl.textContent = `Splunk Query: ${ioc.splunkQuery}`;
+    }
+    if (ioc.tactic) {
+      const tacticEl = detailsContainer.createDiv("timeline-tactic");
+      tacticEl.textContent = `Tactic: ${ioc.tactic}`;
+    }
+    if (ioc.technique) {
+      const techniqueEl = detailsContainer.createDiv("timeline-technique");
+      techniqueEl.textContent = `Technique: ${ioc.technique}`;
+    }
+    timelineItem.addEventListener("mouseover", () => {
+      timelineItem.style.boxShadow = `0 8px 20px ${ioc.color}35`;
+    });
+    timelineItem.addEventListener("mouseout", () => {
+      timelineItem.style.boxShadow = `0 4px 12px ${ioc.color}25`;
+    });
+  });
+}
+
 // src/timeline/GraphTimelineTab.ts
-var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
+
+// src/timeline/GraphTimelineHelpers.ts
 var EDGE_PADDING_PERCENT = 0.08;
+function computePaddedViewport(viewMin, viewMax) {
+  const viewSpan = viewMax - viewMin || 1;
+  const paddingMs = EDGE_PADDING_PERCENT * viewSpan;
+  return {
+    paddedMin: viewMin - paddingMs,
+    paddedMax: viewMax + paddingMs,
+    paddedSpan: viewMax + paddingMs - (viewMin - paddingMs)
+  };
+}
+function formatTimestamp(ts) {
+  const d = new Date(ts);
+  return d.toISOString().replace("T", " ").substring(0, 19);
+}
+function formatShortTime(ts) {
+  const d = new Date(ts);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const seconds = String(d.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}
+${hours}:${minutes}:${seconds}`;
+}
+
+// src/timeline/GraphTimelineRendering.ts
+function createGraphTimelineDOM(container, timedData, dataMinTime, dataMaxTime) {
+  const controlsEl = container.createDiv("graph-range-controls");
+  controlsEl.createEl("span", { text: "From: ", cls: "graph-range-label" });
+  const startInput = controlsEl.createEl("input", {
+    cls: "graph-range-input",
+    type: "text"
+  });
+  startInput.value = formatTimestamp(dataMinTime);
+  controlsEl.createEl("span", { text: " To: ", cls: "graph-range-label" });
+  const endInput = controlsEl.createEl("input", {
+    cls: "graph-range-input",
+    type: "text"
+  });
+  endInput.value = formatTimestamp(dataMaxTime);
+  const resetBtn = controlsEl.createEl("button", {
+    text: "Reset",
+    cls: "graph-range-reset"
+  });
+  const graphArea = container.createDiv("graph-timeline-area");
+  const axisEl = graphArea.createDiv("graph-time-axis");
+  const tooltip = graphArea.createDiv("graph-tooltip");
+  tooltip.style.display = "none";
+  const selectionOverlay = graphArea.createDiv("graph-selection-overlay");
+  selectionOverlay.style.display = "none";
+  const dots = [];
+  timedData.forEach((d, idx) => {
+    const yOffset = (idx % 2 === 0 ? -1 : 1) * (idx % 4 * 6 + 4);
+    const dot = graphArea.createDiv("graph-dot");
+    dot.style.top = `calc(50% + ${yOffset}px)`;
+    dot.style.backgroundColor = d.ioc.color;
+    dot.style.borderColor = d.ioc.color;
+    dot.setAttribute("data-ts", String(d.ts));
+    dot.addEventListener("mouseenter", () => {
+      tooltip.style.display = "block";
+      tooltip.innerHTML = `<strong>${d.ioc.type}</strong><br/>${d.ioc.value || "(no value)"}<br/><span class="graph-tooltip-time">${d.ioc.time}</span>`;
+      const rect = graphArea.getBoundingClientRect();
+      const dotRect = dot.getBoundingClientRect();
+      tooltip.style.left = `${dotRect.left - rect.left + 6}px`;
+      tooltip.style.top = `${dotRect.top - rect.top - 60}px`;
+    });
+    dot.addEventListener("mouseleave", () => {
+      tooltip.style.display = "none";
+    });
+    dots.push(dot);
+  });
+  const listContainer = container.createDiv("graph-filtered-list");
+  const copyBtn = container.createEl("button", {
+    text: "Copy Filtered Range",
+    cls: "timeline-copy-button graph-timeline-copy"
+  });
+  copyBtn.style.position = "absolute";
+  copyBtn.style.top = "10px";
+  copyBtn.style.right = "10px";
+  return {
+    controlsEl,
+    startInput,
+    endInput,
+    resetBtn,
+    graphArea,
+    axisEl,
+    tooltip,
+    selectionOverlay,
+    dots,
+    listContainer,
+    copyBtn
+  };
+}
+
+// src/timeline/GraphTimelineTab.ts
 function renderGraphTimeline(container, iocData) {
   if (iocData.length === 0) {
     container.createEl("p", {
@@ -585,85 +735,38 @@ function renderGraphTimeline(container, iocData) {
   let rangeEnd = dataMaxTime;
   let isDragging = false;
   let dragStartTime = 0;
-  const controlsEl = container.createDiv("graph-range-controls");
-  controlsEl.createEl("span", { text: "From: ", cls: "graph-range-label" });
-  const startInput = controlsEl.createEl("input", { cls: "graph-range-input", type: "text" });
-  startInput.value = formatTimestamp(dataMinTime);
-  controlsEl.createEl("span", { text: " To: ", cls: "graph-range-label" });
-  const endInput = controlsEl.createEl("input", { cls: "graph-range-input", type: "text" });
-  endInput.value = formatTimestamp(dataMaxTime);
-  const resetBtn = controlsEl.createEl("button", { text: "Reset", cls: "graph-range-reset" });
-  const graphArea = container.createDiv("graph-timeline-area");
-  const axisEl = graphArea.createDiv("graph-time-axis");
-  const tooltip = graphArea.createDiv("graph-tooltip");
-  tooltip.style.display = "none";
-  const selectionOverlay = graphArea.createDiv("graph-selection-overlay");
-  selectionOverlay.style.display = "none";
-  const dots = [];
-  timedData.forEach((d, idx) => {
-    const yOffset = (idx % 2 === 0 ? -1 : 1) * (idx % 4 * 6 + 4);
-    const dot = graphArea.createDiv("graph-dot");
-    dot.style.top = `calc(50% + ${yOffset}px)`;
-    dot.style.backgroundColor = d.ioc.color;
-    dot.style.borderColor = d.ioc.color;
-    dot.setAttribute("data-ts", String(d.ts));
-    dot.addEventListener("mouseenter", (e) => {
-      tooltip.style.display = "block";
-      tooltip.innerHTML = `<strong>${d.ioc.type}</strong><br/>${d.ioc.value || "(no value)"}<br/><span class="graph-tooltip-time">${d.ioc.time}</span>`;
-      const rect = graphArea.getBoundingClientRect();
-      const dotRect = dot.getBoundingClientRect();
-      tooltip.style.left = `${dotRect.left - rect.left + 6}px`;
-      tooltip.style.top = `${dotRect.top - rect.top - 60}px`;
-    });
-    dot.addEventListener("mouseleave", () => {
-      tooltip.style.display = "none";
-    });
-    dots.push(dot);
-  });
-  const listContainer = container.createDiv("graph-filtered-list");
-  const copyBtn = container.createEl("button", {
-    text: "Copy Filtered Range",
-    cls: "timeline-copy-button graph-timeline-copy"
-  });
-  copyBtn.style.position = "absolute";
-  copyBtn.style.top = "10px";
-  copyBtn.style.right = "10px";
-  copyBtn.addEventListener("click", () => {
-    const text = generateCopyText(timedData.map((d) => d.ioc), viewMinTime, viewMaxTime);
-    const filtered = timedData.filter((d) => d.ts >= viewMinTime && d.ts <= viewMaxTime);
-    navigator.clipboard.writeText(text).then(() => {
-      new import_obsidian.Notice(`Copied ${filtered.length} of ${timedData.length} entries to clipboard`);
-    });
-  });
+  const dom = createGraphTimelineDOM(container, timedData, dataMinTime, dataMaxTime);
+  const {
+    startInput,
+    endInput,
+    resetBtn,
+    graphArea,
+    axisEl,
+    selectionOverlay,
+    dots,
+    listContainer
+  } = dom;
   function updateAxisTicks() {
     axisEl.querySelectorAll(".graph-axis-tick").forEach((el) => el.remove());
-    const viewSpan = viewMaxTime - viewMinTime || 1;
-    const paddingMs = EDGE_PADDING_PERCENT * viewSpan;
-    const paddedViewMin = viewMinTime - paddingMs;
-    const paddedViewMax = viewMaxTime + paddingMs;
-    const paddedViewSpan = paddedViewMax - paddedViewMin;
+    const { paddedMin, paddedSpan } = computePaddedViewport(viewMinTime, viewMaxTime);
     const tickCount = Math.min(6, timedData.length);
     for (let i = 0; i < tickCount; i++) {
       const pct = tickCount === 1 ? 50 : i / (tickCount - 1) * 100;
-      const tickTime = paddedViewMin + pct / 100 * paddedViewSpan;
+      const tickTime = paddedMin + pct / 100 * paddedSpan;
       const tick = axisEl.createDiv("graph-axis-tick");
       tick.style.left = `${pct}%`;
       tick.setAttribute("data-label", formatShortTime(tickTime));
     }
   }
   function updateDotPositions() {
-    const viewSpan = viewMaxTime - viewMinTime || 1;
-    const paddingMs = EDGE_PADDING_PERCENT * viewSpan;
-    const paddedViewMin = viewMinTime - paddingMs;
-    const paddedViewMax = viewMaxTime + paddingMs;
-    const paddedViewSpan = paddedViewMax - paddedViewMin;
+    const { paddedMin, paddedSpan } = computePaddedViewport(viewMinTime, viewMaxTime);
     dots.forEach((dot) => {
       const ts = Number(dot.getAttribute("data-ts"));
       if (ts < viewMinTime || ts > viewMaxTime) {
         dot.style.display = "none";
       } else {
         dot.style.display = "block";
-        const pct = (ts - paddedViewMin) / paddedViewSpan * 100;
+        const pct = (ts - paddedMin) / paddedSpan * 100;
         dot.style.left = `${pct}%`;
       }
     });
@@ -723,18 +826,21 @@ function renderGraphTimeline(container, iocData) {
     updateDotPositions();
     updateFilter();
   }
+  dom.copyBtn.addEventListener("click", () => {
+    const text = generateCopyText(timedData.map((d) => d.ioc), viewMinTime, viewMaxTime);
+    const filtered = timedData.filter((d) => d.ts >= viewMinTime && d.ts <= viewMaxTime);
+    navigator.clipboard.writeText(text).then(() => {
+      new import_obsidian2.Notice(`Copied ${filtered.length} of ${timedData.length} entries to clipboard`);
+    });
+  });
   graphArea.addEventListener("mousedown", (e) => {
     if (e.target.classList.contains("graph-dot"))
       return;
     const rect = graphArea.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const pct = (clickX - 30) / (rect.width - 60);
-    const viewSpan = viewMaxTime - viewMinTime || 1;
-    const paddingMs = EDGE_PADDING_PERCENT * viewSpan;
-    const paddedViewMin = viewMinTime - paddingMs;
-    const paddedViewMax = viewMaxTime + paddingMs;
-    const paddedViewSpan = paddedViewMax - paddedViewMin;
-    dragStartTime = paddedViewMin + pct * paddedViewSpan;
+    const { paddedMin, paddedSpan } = computePaddedViewport(viewMinTime, viewMaxTime);
+    dragStartTime = paddedMin + pct * paddedSpan;
     dragStartTime = Math.max(dataMinTime, Math.min(dataMaxTime, dragStartTime));
     isDragging = true;
     graphArea.classList.add("dragging");
@@ -749,15 +855,11 @@ function renderGraphTimeline(container, iocData) {
     const rect = graphArea.getBoundingClientRect();
     const currentX = e.clientX - rect.left;
     const pct = (currentX - 30) / (rect.width - 60);
-    const viewSpan = viewMaxTime - viewMinTime || 1;
-    const paddingMs = EDGE_PADDING_PERCENT * viewSpan;
-    const paddedViewMin = viewMinTime - paddingMs;
-    const paddedViewMax = viewMaxTime + paddingMs;
-    const paddedViewSpan = paddedViewMax - paddedViewMin;
-    const currentTime = paddedViewMin + pct * paddedViewSpan;
+    const { paddedMin, paddedSpan } = computePaddedViewport(viewMinTime, viewMaxTime);
+    const currentTime = paddedMin + pct * paddedSpan;
     const clampedTime = Math.max(dataMinTime, Math.min(dataMaxTime, currentTime));
     endInput.value = formatTimestamp(clampedTime);
-    const startX = (dragStartTime - paddedViewMin) / paddedViewSpan * (rect.width - 60) + 30;
+    const startX = (dragStartTime - paddedMin) / paddedSpan * (rect.width - 60) + 30;
     const endX = currentX;
     const left = Math.min(startX, endX);
     const width = Math.abs(endX - startX);
@@ -770,12 +872,8 @@ function renderGraphTimeline(container, iocData) {
     const rect = graphArea.getBoundingClientRect();
     const endX = e.clientX - rect.left;
     const pct = (endX - 30) / (rect.width - 60);
-    const viewSpan = viewMaxTime - viewMinTime || 1;
-    const paddingMs = EDGE_PADDING_PERCENT * viewSpan;
-    const paddedViewMin = viewMinTime - paddingMs;
-    const paddedViewMax = viewMaxTime + paddingMs;
-    const paddedViewSpan = paddedViewMax - paddedViewMin;
-    let dragEndTime = paddedViewMin + pct * paddedViewSpan;
+    const { paddedMin, paddedSpan } = computePaddedViewport(viewMinTime, viewMaxTime);
+    let dragEndTime = paddedMin + pct * paddedSpan;
     dragEndTime = Math.max(dataMinTime, Math.min(dataMaxTime, dragEndTime));
     isDragging = false;
     graphArea.classList.remove("dragging");
@@ -810,26 +908,11 @@ function renderGraphTimeline(container, iocData) {
   updateDotPositions();
   updateFilter();
 }
-function formatTimestamp(ts) {
-  const d = new Date(ts);
-  return d.toISOString().replace("T", " ").substring(0, 19);
-}
-function formatShortTime(ts) {
-  const d = new Date(ts);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-  const seconds = String(d.getSeconds()).padStart(2, "0");
-  return `${year}-${month}-${day}
-${hours}:${minutes}:${seconds}`;
-}
 
 // src/canvas/CanvasEdges.ts
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 function getCanvasEdges(app) {
-  const activeView = app.workspace.getActiveViewOfType(import_obsidian2.ItemView);
+  const activeView = app.workspace.getActiveViewOfType(import_obsidian3.ItemView);
   if (!activeView || activeView.getViewType() !== "canvas") {
     if (DEBUG)
       console.debug("[CanvasEdges] No active canvas view");
@@ -952,6 +1035,46 @@ function buildParentChildGroups(iocData, edges) {
   return { groups, badDirectionalCards };
 }
 
+// src/timeline/LinkTimelineCardRow.ts
+function renderIOCCardRow(opts) {
+  const { container, ioc, showConnector = false, depth = 0, extraClasses = [] } = opts;
+  const rowEl = container.createDiv("link-timeline-child");
+  extraClasses.forEach((cls) => rowEl.classList.add(cls));
+  if (depth > 0) {
+    rowEl.classList.add(`depth-${depth}`);
+    rowEl.style.marginLeft = `${depth * 30}px`;
+  }
+  rowEl.style.borderLeftColor = ioc.color;
+  if (showConnector) {
+    rowEl.createDiv("link-timeline-connector");
+  }
+  rowEl.createEl("span", {
+    text: ioc.isChild ? "[C]" : "[P]",
+    cls: `link-timeline-role-badge ${ioc.isChild ? "role-child" : "role-parent"}`
+  });
+  const iconEl = rowEl.createDiv("link-timeline-icon");
+  iconEl.innerHTML = ioc.icon;
+  iconEl.style.color = ioc.color;
+  const detailsEl = rowEl.createDiv("link-timeline-details");
+  detailsEl.createEl("strong", { text: ioc.type });
+  if (ioc.time) {
+    detailsEl.createEl("span", { text: ` | ${ioc.time}`, cls: "link-timeline-time" });
+  }
+  if (ioc.cardId) {
+    detailsEl.createEl("span", { text: ` | ${ioc.cardId}`, cls: "link-timeline-card-id" });
+  }
+  if (ioc.value && ioc.value.trim()) {
+    detailsEl.createDiv({ text: ioc.value, cls: "link-timeline-value" });
+  }
+  if (ioc.tactic) {
+    detailsEl.createDiv({ text: `Tactic: ${ioc.tactic}`, cls: "link-timeline-tactic" });
+  }
+  if (ioc.technique) {
+    detailsEl.createDiv({ text: `Technique: ${ioc.technique}`, cls: "link-timeline-technique" });
+  }
+  return rowEl;
+}
+
 // src/timeline/LinkTimelineTab.ts
 function isParentChildGroup(item) {
   return "children" in item && Array.isArray(item.children);
@@ -980,35 +1103,12 @@ function renderLinkTimeline(container, result) {
     }
   }
   function renderLeafNode(childrenContainer, child, depth) {
-    const childEl = childrenContainer.createDiv("link-timeline-child");
-    childEl.classList.add(`depth-${depth}`);
-    childEl.style.borderLeftColor = child.color;
-    childEl.style.marginLeft = `${depth * 30}px`;
-    childEl.createDiv("link-timeline-connector");
-    childEl.createEl("span", {
-      text: child.isChild ? "[C]" : "[P]",
-      cls: `link-timeline-role-badge ${child.isChild ? "role-child" : "role-parent"}`
+    renderIOCCardRow({
+      container: childrenContainer,
+      ioc: child,
+      showConnector: true,
+      depth
     });
-    const childIcon = childEl.createDiv("link-timeline-icon");
-    childIcon.innerHTML = child.icon;
-    childIcon.style.color = child.color;
-    const childDetails = childEl.createDiv("link-timeline-details");
-    childDetails.createEl("strong", { text: child.type });
-    if (child.time) {
-      childDetails.createEl("span", { text: ` | ${child.time}`, cls: "link-timeline-time" });
-    }
-    if (child.cardId) {
-      childDetails.createEl("span", { text: ` | ${child.cardId}`, cls: "link-timeline-card-id" });
-    }
-    if (child.value && child.value.trim()) {
-      childDetails.createDiv({ text: child.value, cls: "link-timeline-value" });
-    }
-    if (child.tactic) {
-      childDetails.createDiv({ text: `Tactic: ${child.tactic}`, cls: "link-timeline-tactic" });
-    }
-    if (child.technique) {
-      childDetails.createDiv({ text: `Technique: ${child.technique}`, cls: "link-timeline-technique" });
-    }
   }
   function renderNestedGroup(childrenContainer, group, depth) {
     const nestedGroupEl = childrenContainer.createDiv("link-timeline-child link-timeline-nested-parent");
@@ -1136,16 +1236,15 @@ function renderLinkTimeline(container, result) {
 }
 
 // src/timeline/RenderTimelinesModal.ts
-var RenderTimelinesModal = class extends import_obsidian3.Modal {
+var RenderTimelinesModal = class extends import_obsidian4.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
-    this.timeProcessor = new TimeTimelineProcessor(app, plugin, plugin.iocTypes);
   }
   onOpen() {
     const { contentEl } = this;
     this.modalEl.classList.add("timeline-modal-fullscreen");
-    const iocData = this.timeProcessor.extractFixedIOCData();
+    const iocData = extractFixedIOCData(this.app);
     if (DEBUG)
       console.debug("[TimelineModal] Extracted", iocData.length, "IOC cards");
     const sortedData = [...iocData].sort(
@@ -1179,7 +1278,7 @@ var RenderTimelinesModal = class extends import_obsidian3.Modal {
     const contentArea = contentEl.createDiv("timeline-tab-content-area");
     const timeTab = contentArea.createDiv("timeline-tab-pane");
     tabContents["time"] = timeTab;
-    this.renderEnhancedTimeTimeline(timeTab, sortedData);
+    renderTimeTimeline(timeTab, sortedData);
     const graphTab = contentArea.createDiv("timeline-tab-pane");
     graphTab.style.display = "none";
     tabContents["graph"] = graphTab;
@@ -1191,78 +1290,6 @@ var RenderTimelinesModal = class extends import_obsidian3.Modal {
     const result = buildParentChildGroups(iocData, edges);
     renderLinkTimeline(linkTab, result);
   }
-  /**
-   * Renders the chronological Time Timeline. Takes pre-sorted IOC data
-   * and renders each IOC as a colored card with a gradient connector.
-   */
-  renderEnhancedTimeTimeline(container, iocData) {
-    if (DEBUG)
-      console.debug("[TimeTimeline] Starting render");
-    if (iocData.length === 0) {
-      container.createEl("p", {
-        text: "No IOC cards found in the current canvas. Create some IOC cards first to see the timeline.",
-        cls: "timeline-empty-message"
-      });
-      return;
-    }
-    const timeCopyBtn = container.createEl("button", {
-      text: "Copy Timeline",
-      cls: "timeline-copy-button"
-    });
-    timeCopyBtn.style.position = "absolute";
-    timeCopyBtn.style.top = "10px";
-    timeCopyBtn.style.right = "10px";
-    timeCopyBtn.addEventListener("click", () => {
-      const text = generateCopyText(iocData);
-      navigator.clipboard.writeText(text).then(() => {
-        new import_obsidian3.Notice(`Copied ${iocData.length} entries to clipboard`);
-      });
-    });
-    const timelineContainer = container.createDiv("timeline-container");
-    iocData.forEach((ioc, index) => {
-      const timelineItem = timelineContainer.createDiv("timeline-item");
-      timelineItem.style.setProperty("--ioc-color", ioc.color);
-      timelineItem.style.setProperty("--ioc-color-30", `${ioc.color}30`);
-      timelineItem.style.background = `linear-gradient(135deg, ${ioc.color}15 0%, ${ioc.color}05 100%)`;
-      timelineItem.style.boxShadow = `0 4px 12px ${ioc.color}25`;
-      timelineItem.style.borderColor = ioc.color;
-      if (index < iocData.length - 1) {
-        const connector = timelineItem.createDiv("timeline-connector");
-        connector.style.background = `linear-gradient(180deg, ${ioc.color} 0%, ${iocData[index + 1].color} 100%)`;
-      }
-      const iconContainer = timelineItem.createDiv("timeline-icon");
-      iconContainer.innerHTML = ioc.icon;
-      iconContainer.style.background = `${ioc.color}20`;
-      iconContainer.style.borderColor = ioc.color;
-      const detailsContainer = timelineItem.createDiv("timeline-details");
-      const titleEl = detailsContainer.createEl("h3", { text: ioc.type });
-      titleEl.style.textShadow = `0 1px 3px ${ioc.color}40`;
-      const timeEl = detailsContainer.createDiv("timeline-time");
-      timeEl.textContent = `Time: ${ioc.time}`;
-      if (ioc.value && ioc.value.trim()) {
-        const valueEl = detailsContainer.createDiv("timeline-value");
-        valueEl.textContent = `Value: ${ioc.value}`;
-      }
-      if (ioc.splunkQuery && ioc.splunkQuery.trim()) {
-        const splunkEl = detailsContainer.createDiv("timeline-splunk");
-        splunkEl.textContent = `Splunk Query: ${ioc.splunkQuery}`;
-      }
-      if (ioc.tactic) {
-        const tacticEl = detailsContainer.createDiv("timeline-tactic");
-        tacticEl.textContent = `Tactic: ${ioc.tactic}`;
-      }
-      if (ioc.technique) {
-        const techniqueEl = detailsContainer.createDiv("timeline-technique");
-        techniqueEl.textContent = `Technique: ${ioc.technique}`;
-      }
-      timelineItem.addEventListener("mouseover", () => {
-        timelineItem.style.boxShadow = `0 8px 20px ${ioc.color}35`;
-      });
-      timelineItem.addEventListener("mouseout", () => {
-        timelineItem.style.boxShadow = `0 4px 12px ${ioc.color}25`;
-      });
-    });
-  }
   onClose() {
     const { contentEl } = this;
     contentEl.empty();
@@ -1270,10 +1297,9 @@ var RenderTimelinesModal = class extends import_obsidian3.Modal {
 };
 
 // src/mitre/RenderMitreModal.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
-// src/mitre/MitreLoader.ts
-var cachedDataset = null;
+// src/mitre/MitreStixParser.ts
 var TACTIC_ABBREVIATIONS = {
   "Reconnaissance": ["RECON", "RECCE", "RE"],
   "Resource Development": ["RESOURCE", "RES", "RD"],
@@ -1290,46 +1316,16 @@ var TACTIC_ABBREVIATIONS = {
   "Exfiltration": ["EXFIL", "EXFILTRATE"],
   "Impact": ["IMP", "IM"]
 };
-async function loadMitreDataset(app) {
-  if (cachedDataset) {
-    if (DEBUG)
-      console.debug("[MitreLoader] Returning cached dataset");
-    return cachedDataset;
+function generateAbbreviations(tacticName) {
+  const abbrevs = [];
+  const words = tacticName.split(/[\s\-]+/);
+  if (words.length > 0) {
+    abbrevs.push(words.map((w) => w[0]).join("").toUpperCase());
   }
-  try {
-    const adapter = app.vault.adapter;
-    const jsonPath = ".obsidian/plugins/cyber_canvas/MITRE/enterprise-attack.json";
-    if (DEBUG)
-      console.debug("[MitreLoader] Attempting to load from:", jsonPath);
-    if (await adapter.exists(jsonPath)) {
-      const content = await adapter.read(jsonPath);
-      const stixBundle = JSON.parse(content);
-      if (stixBundle.type === "bundle" && Array.isArray(stixBundle.objects)) {
-        if (DEBUG)
-          console.debug("[MitreLoader] Parsing STIX 2.1 bundle format...");
-        cachedDataset = parseStixBundle(stixBundle);
-        console.log("[MitreLoader] \u2713 Loaded full dataset from STIX bundle. Tactics:", Object.keys(cachedDataset.tactics).length, "Techniques:", Object.keys(cachedDataset.techniques).length);
-        return cachedDataset;
-      } else if (stixBundle.version && stixBundle.tactics && stixBundle.techniques) {
-        cachedDataset = stixBundle;
-        console.log("[MitreLoader] \u2713 Loaded pre-processed dataset. Version:", cachedDataset.version, "Techniques:", Object.keys(cachedDataset.techniques).length);
-        return cachedDataset;
-      } else {
-        console.warn("[MitreLoader] Unknown JSON format");
-      }
-    } else {
-      console.error("[MitreLoader] JSON file not found at:", jsonPath);
-      throw new Error(
-        "MITRE ATT&CK dataset not found. Please ensure enterprise-attack.json exists in the MITRE folder. Download from: https://github.com/mitre-attack/attack-stix-data"
-      );
-    }
-  } catch (err) {
-    console.error("[MitreLoader] Failed to load MITRE dataset:", err);
-    throw new Error(
-      "MITRE ATT&CK dataset not found. Please ensure enterprise-attack.json exists in the MITRE folder. Download from: https://github.com/mitre-attack/attack-stix-data"
-    );
+  if (TACTIC_ABBREVIATIONS[tacticName]) {
+    abbrevs.push(...TACTIC_ABBREVIATIONS[tacticName]);
   }
-  throw new Error("MITRE ATT&CK dataset could not be loaded");
+  return abbrevs;
 }
 function parseStixBundle(stixBundle) {
   var _a, _b, _c, _d, _e, _f, _g, _h;
@@ -1407,17 +1403,8 @@ function parseStixBundle(stixBundle) {
     techniques
   };
 }
-function generateAbbreviations(tacticName) {
-  const abbrevs = [];
-  const words = tacticName.split(/[\s\-]+/);
-  if (words.length > 0) {
-    abbrevs.push(words.map((w) => w[0]).join("").toUpperCase());
-  }
-  if (TACTIC_ABBREVIATIONS[tacticName]) {
-    abbrevs.push(...TACTIC_ABBREVIATIONS[tacticName]);
-  }
-  return abbrevs;
-}
+
+// src/mitre/MitreValidation.ts
 function normalizeTacticName(name, dataset) {
   const normalized = name.toLowerCase().replace(/[\s\-_]+/g, "");
   if (DEBUG)
@@ -1480,34 +1467,83 @@ function validateTechniqueTactic(techniqueId, tacticInput, dataset) {
   };
 }
 
-// src/mitre/MitreSeverity.ts
-function isCriticalSeverity(severity) {
-  return severity === "unknown_technique" || severity === "unknown_tactic" || severity === "empty_tactic";
-}
-function getSeverityIcon(severity) {
-  return isCriticalSeverity(severity) ? "\u{1F534}" : "\u26A0\uFE0F";
-}
-function applySeverityClass(element, severity) {
-  if (severity === "valid") {
-    element.addClass("mitre-technique-valid");
-  } else if (isCriticalSeverity(severity)) {
-    element.addClass("mitre-technique-error");
-  } else if (severity === "mismatch") {
-    element.addClass("mitre-technique-warning");
+// src/mitre/MitreLoader.ts
+var cachedDataset = null;
+async function loadMitreDataset(app) {
+  if (cachedDataset) {
+    if (DEBUG)
+      console.debug("[MitreLoader] Returning cached dataset");
+    return cachedDataset;
   }
-}
-function shouldOverrideSeverity(newSeverity, existingSeverity) {
-  const severityRank = {
-    "unknown_technique": 5,
-    "unknown_tactic": 4,
-    "empty_tactic": 3,
-    "mismatch": 2,
-    "valid": 1
-  };
-  return severityRank[newSeverity] > severityRank[existingSeverity];
+  try {
+    const adapter = app.vault.adapter;
+    const jsonPath = ".obsidian/plugins/cyber_canvas/MITRE/enterprise-attack.json";
+    if (DEBUG)
+      console.debug("[MitreLoader] Attempting to load from:", jsonPath);
+    if (await adapter.exists(jsonPath)) {
+      const content = await adapter.read(jsonPath);
+      const stixBundle = JSON.parse(content);
+      if (stixBundle.type === "bundle" && Array.isArray(stixBundle.objects)) {
+        if (DEBUG)
+          console.debug("[MitreLoader] Parsing STIX 2.1 bundle format...");
+        cachedDataset = parseStixBundle(stixBundle);
+        if (DEBUG)
+          console.debug("[MitreLoader] Loaded full dataset from STIX bundle. Tactics:", Object.keys(cachedDataset.tactics).length, "Techniques:", Object.keys(cachedDataset.techniques).length);
+        return cachedDataset;
+      } else if (stixBundle.version && stixBundle.tactics && stixBundle.techniques) {
+        cachedDataset = stixBundle;
+        if (DEBUG)
+          console.debug("[MitreLoader] Loaded pre-processed dataset. Version:", cachedDataset.version, "Techniques:", Object.keys(cachedDataset.techniques).length);
+        return cachedDataset;
+      } else {
+        console.warn("[MitreLoader] Unknown JSON format");
+      }
+    } else {
+      console.error("[MitreLoader] JSON file not found at:", jsonPath);
+      throw new Error(
+        "MITRE ATT&CK dataset not found. Please ensure enterprise-attack.json exists in the MITRE folder. Download from: https://github.com/mitre-attack/attack-stix-data"
+      );
+    }
+  } catch (err) {
+    console.error("[MitreLoader] Failed to load MITRE dataset:", err);
+    throw new Error(
+      "MITRE ATT&CK dataset not found. Please ensure enterprise-attack.json exists in the MITRE folder. Download from: https://github.com/mitre-attack/attack-stix-data"
+    );
+  }
+  throw new Error("MITRE ATT&CK dataset could not be loaded");
 }
 
-// src/mitre/MitreAggregator.ts
+// src/mitre/MitreAggregatorTypes.ts
+var TACTIC_ORDER = [
+  "TA0043",
+  // Reconnaissance
+  "TA0042",
+  // Resource Development
+  "TA0001",
+  // Initial Access
+  "TA0002",
+  // Execution
+  "TA0003",
+  // Persistence
+  "TA0004",
+  // Privilege Escalation
+  "TA0005",
+  // Defense Evasion
+  "TA0006",
+  // Credential Access
+  "TA0007",
+  // Discovery
+  "TA0008",
+  // Lateral Movement
+  "TA0009",
+  // Collection
+  "TA0011",
+  // Command and Control
+  "TA0010",
+  // Exfiltration
+  "TA0040"
+  // Impact
+];
 function extractTechniqueId(technique) {
   const idMatch = technique.match(/T\d{4}(?:\.\d{3})?/i);
   if (idMatch) {
@@ -1548,6 +1584,34 @@ function extractTechniqueName(technique, dataset) {
     console.debug("[MitreAggregator] Using raw technique string as name:", technique);
   return technique.trim();
 }
+
+// src/mitre/MitreSeverity.ts
+function isCriticalSeverity(severity) {
+  return severity === "unknown_technique" || severity === "unknown_tactic";
+}
+function getSeverityIcon(severity) {
+  return isCriticalSeverity(severity) ? "\u{1F534}" : "\u26A0\uFE0F";
+}
+function applySeverityClass(element, severity) {
+  if (severity === "valid") {
+    element.addClass("mitre-technique-valid");
+  } else if (isCriticalSeverity(severity)) {
+    element.addClass("mitre-technique-error");
+  } else if (severity === "mismatch") {
+    element.addClass("mitre-technique-warning");
+  }
+}
+function shouldOverrideSeverity(newSeverity, existingSeverity) {
+  const severityRank = {
+    "unknown_technique": 4,
+    "unknown_tactic": 3,
+    "mismatch": 2,
+    "valid": 1
+  };
+  return severityRank[newSeverity] > severityRank[existingSeverity];
+}
+
+// src/mitre/MitreAggregatorCardProcessing.ts
 function markParentAsFound(techniqueId, foundTechniques, tactic) {
   if (!techniqueId.includes("."))
     return;
@@ -1572,43 +1636,7 @@ function markParentAsFound(techniqueId, foundTechniques, tactic) {
       tactic
     });
 }
-var TACTIC_ORDER = [
-  "TA0043",
-  // Reconnaissance
-  "TA0042",
-  // Resource Development
-  "TA0001",
-  // Initial Access
-  "TA0002",
-  // Execution
-  "TA0003",
-  // Persistence
-  "TA0004",
-  // Privilege Escalation
-  "TA0005",
-  // Defense Evasion
-  "TA0006",
-  // Credential Access
-  "TA0007",
-  // Discovery
-  "TA0008",
-  // Lateral Movement
-  "TA0009",
-  // Collection
-  "TA0011",
-  // Command and Control
-  "TA0010",
-  // Exfiltration
-  "TA0040"
-  // Impact
-];
-function aggregateTacticsTechniques(iocData, dataset) {
-  console.log("[MitreAggregator] Starting full matrix aggregation with", iocData.length, "IOC cards");
-  console.log("[MitreAggregator] Dataset has", Object.keys(dataset.techniques).length, "techniques");
-  const iocDataMap = /* @__PURE__ */ new Map();
-  iocData.forEach((ioc) => {
-    iocDataMap.set(ioc.id, ioc);
-  });
+function buildFoundTechniquesFromIOC(iocData, dataset) {
   const foundTechniques = /* @__PURE__ */ new Map();
   const cardValidations = /* @__PURE__ */ new Map();
   const missingTacticCards = [];
@@ -1711,7 +1739,34 @@ function aggregateTacticsTechniques(iocData, dataset) {
     }
     markParentAsFound(techniqueId, foundTechniques, tactic);
   });
-  console.log("[MitreAggregator] Found", foundTechniques.size, "unique techniques in IOC cards");
+  if (DEBUG)
+    console.debug("[MitreAggregator] Found", foundTechniques.size, "unique techniques in IOC cards");
+  return {
+    foundTechniques,
+    cardValidations,
+    missingTacticCards,
+    missingTechniqueCards,
+    iocCount
+  };
+}
+
+// src/mitre/MitreAggregator.ts
+function aggregateTacticsTechniques(iocData, dataset) {
+  if (DEBUG)
+    console.debug("[MitreAggregator] Starting full matrix aggregation with", iocData.length, "IOC cards");
+  if (DEBUG)
+    console.debug("[MitreAggregator] Dataset has", Object.keys(dataset.techniques).length, "techniques");
+  const iocDataMap = /* @__PURE__ */ new Map();
+  iocData.forEach((ioc) => {
+    iocDataMap.set(ioc.id, ioc);
+  });
+  const {
+    foundTechniques,
+    cardValidations,
+    missingTacticCards,
+    missingTechniqueCards,
+    iocCount
+  } = buildFoundTechniquesFromIOC(iocData, dataset);
   const tacticMap = /* @__PURE__ */ new Map();
   Object.values(dataset.tactics).forEach((tacticData) => {
     tacticMap.set(tacticData.id, {
@@ -1767,11 +1822,6 @@ function aggregateTacticsTechniques(iocData, dataset) {
       });
     });
   });
-  console.log("[MitreAggregator] Subtechniques aggregation complete:");
-  subtechniquesMap.forEach((subs, parentId) => {
-    const foundCount = subs.filter((s) => s.isFound).length;
-    console.log(`  ${parentId}: ${subs.length} total (${foundCount} found, ${subs.length - foundCount} unfound)`);
-  });
   const tactics = Array.from(tacticMap.values());
   tactics.sort((a, b) => {
     const indexA = TACTIC_ORDER.indexOf(a.name);
@@ -1791,12 +1841,14 @@ function aggregateTacticsTechniques(iocData, dataset) {
       return a.id.localeCompare(b.id);
     });
   });
-  console.log("[MitreAggregator] Full matrix built:", {
-    totalTactics: tactics.length,
-    totalTechniques: tactics.reduce((sum, t) => sum + t.techniques.length, 0),
-    foundTechniques: foundTechniques.size
-  });
-  console.log("[MitreAggregator] Collecting validation errors from card-level validation...");
+  if (DEBUG)
+    console.debug("[MitreAggregator] Full matrix built:", {
+      totalTactics: tactics.length,
+      totalTechniques: tactics.reduce((sum, t) => sum + t.techniques.length, 0),
+      foundTechniques: foundTechniques.size
+    });
+  if (DEBUG)
+    console.debug("[MitreAggregator] Collecting validation errors from card-level validation...");
   const validationErrors = [];
   const errorsByTechnique = /* @__PURE__ */ new Map();
   cardValidations.forEach((cardValidation, cardId) => {
@@ -1827,12 +1879,13 @@ function aggregateTacticsTechniques(iocData, dataset) {
       iocCards: errorData.cards
     });
   });
-  console.log("[MitreAggregator] Found", validationErrors.length, "validation error groups from", cardValidations.size, "cards");
-  console.log("[MitreAggregator] Cards with errors:", Array.from(cardValidations.values()).filter((v) => v.severity !== "valid").length);
-  console.log("[MitreAggregator] Missing fields:", {
-    missingTactic: missingTacticCards.length,
-    missingTechnique: missingTechniqueCards.length
-  });
+  if (DEBUG)
+    console.debug("[MitreAggregator] Aggregation complete:", {
+      errorGroups: validationErrors.length,
+      cardsWithErrors: Array.from(cardValidations.values()).filter((v) => v.severity !== "valid").length,
+      missingTactic: missingTacticCards.length,
+      missingTechnique: missingTechniqueCards.length
+    });
   return {
     tactics,
     validationErrors,
@@ -2021,6 +2074,55 @@ function makeResizable(modal) {
   });
 }
 
+// src/mitre/MitreStatsBar.ts
+function renderStatsBar(statsContainer, tactics, iocCount, missingFields) {
+  const totalTechniques = tactics.reduce((sum, t) => sum + t.techniques.length, 0);
+  const foundTechniques = tactics.reduce(
+    (sum, t) => sum + t.techniques.filter((tech) => tech.isFound).length,
+    0
+  );
+  const coveragePercent = totalTechniques > 0 ? Math.round(foundTechniques / totalTechniques * 100) : 0;
+  statsContainer.createEl("div", {
+    text: `\u{1F4CA} Coverage: ${foundTechniques}/${totalTechniques} techniques (${coveragePercent}%)`,
+    cls: "mitre-stat-item"
+  });
+  const activeTactics = tactics.filter((t) => t.techniques.some((tech) => tech.isFound)).length;
+  statsContainer.createEl("div", {
+    text: `\u2694\uFE0F Tactics: ${activeTactics}/${tactics.length} active`,
+    cls: "mitre-stat-item"
+  });
+  statsContainer.createEl("div", {
+    text: `\u{1F4C7} IOC Cards: ${iocCount} total`,
+    cls: "mitre-stat-item"
+  });
+  const missingTacticCount = missingFields.missingTactic.length;
+  if (missingTacticCount > 0) {
+    const missingTacticEl = statsContainer.createEl("div", {
+      text: `\u26A0\uFE0F Missing Tactic: ${missingTacticCount} card${missingTacticCount === 1 ? "" : "s"}`,
+      cls: "mitre-stat-item mitre-stat-warning"
+    });
+    const tooltipText = missingFields.missingTactic.map((info) => {
+      const missing = info.missing === "both" ? "tactic, technique" : "tactic";
+      return `${info.iocType} ${info.cardId} (missing: ${missing})`;
+    }).join("\n");
+    missingTacticEl.setAttribute("title", tooltipText);
+    missingTacticEl.setAttribute("aria-label", `${missingTacticCount} cards missing tactic field`);
+  }
+  const missingTechniqueCount = missingFields.missingTechnique.length;
+  if (missingTechniqueCount > 0) {
+    const missingTechniqueEl = statsContainer.createEl("div", {
+      text: `\u26A0\uFE0F Missing Technique: ${missingTechniqueCount} card${missingTechniqueCount === 1 ? "" : "s"}`,
+      cls: "mitre-stat-item mitre-stat-warning"
+    });
+    const tooltipText = missingFields.missingTechnique.map((info) => {
+      const missing = info.missing === "both" ? "tactic, technique" : "technique";
+      return `${info.iocType} ${info.cardId} (missing: ${missing})`;
+    }).join("\n");
+    missingTechniqueEl.setAttribute("title", tooltipText);
+    missingTechniqueEl.setAttribute("aria-label", `${missingTechniqueCount} cards missing technique field`);
+  }
+}
+
 // src/mitre/MitreTextUtils.ts
 function cleanDescription(description) {
   if (!description)
@@ -2193,7 +2295,7 @@ function toggleExpansion(element, ctx, subtechniques) {
   }
 }
 
-// src/mitre/MitreModalTacticRenderer.ts
+// src/mitre/MitreCountBadge.ts
 function createCountBadgeWithTooltip(parentEl, technique, ctx, extraIocCards) {
   const badge = parentEl.createDiv("mitre-technique-count-badge");
   badge.textContent = `${technique.count} card${technique.count > 1 ? "s" : ""}`;
@@ -2215,17 +2317,6 @@ function createCountBadgeWithTooltip(parentEl, technique, ctx, extraIocCards) {
       const valueEl = cardItem.createDiv("mitre-tooltip-value");
       valueEl.textContent = iocData.value;
     }
-    if (iocData.mitreTactic || iocData.mitreTechnique) {
-      const mitreEl = cardItem.createDiv("mitre-tooltip-fields");
-      if (iocData.mitreTactic) {
-        mitreEl.createSpan({ text: `Tactic: ${iocData.mitreTactic}` });
-      }
-      if (iocData.mitreTechnique) {
-        if (iocData.mitreTactic)
-          mitreEl.createSpan({ text: " | " });
-        mitreEl.createSpan({ text: `Technique: ${iocData.mitreTechnique}` });
-      }
-    }
     if (index < allCardIds.length - 1) {
       cardItem.style.borderBottom = "1px solid var(--background-modifier-border)";
       cardItem.style.paddingBottom = "8px";
@@ -2241,6 +2332,8 @@ function createCountBadgeWithTooltip(parentEl, technique, ctx, extraIocCards) {
   if (DEBUG)
     console.debug("[MitreModalRenderer]   \u2192 Count badge with tooltip:", technique.count, "card(s), allCards:", allCardIds.length);
 }
+
+// src/mitre/MitreModalTacticRenderer.ts
 function renderTacticSection(container, tactic, ctx, searchState) {
   if (DEBUG)
     console.debug("[MitreModalRenderer] ========== RENDERING TACTIC SECTION ==========");
@@ -2301,15 +2394,6 @@ function renderTechniqueItem(techniqueList, technique, ctx, searchState) {
       toggleExpansion(techItem, ctx, subtechniques);
     });
   }
-  if (technique.isFound && technique.severity !== "valid" && technique.severity !== "not_found") {
-    const warningEl = techInfo.createEl("span", {
-      cls: "mitre-validation-icon",
-      attr: {
-        "title": technique.validationMessage || "Warning"
-      }
-    });
-    warningEl.innerHTML = getSeverityIcon(technique.severity);
-  }
   techInfo.createEl("span", {
     text: technique.id,
     cls: "mitre-technique-id"
@@ -2346,6 +2430,8 @@ function renderTechniqueItem(techniqueList, technique, ctx, searchState) {
     createCountBadgeWithTooltip(techItem, technique, ctx, subtechCards);
   }
 }
+
+// src/mitre/MitreSubtechniqueRenderer.ts
 function renderSubtechniques(parentEl, subtechniques, ctx, searchState) {
   const container = parentEl.createDiv({ cls: "mitre-subtechniques-container" });
   subtechniques.forEach((subtech) => {
@@ -2379,15 +2465,6 @@ function renderSubtechniques(parentEl, subtechniques, ctx, searchState) {
         e.stopPropagation();
         toggleExpansion(subItem, ctx);
       });
-    }
-    if (subtech.isFound && subtech.severity !== "valid" && subtech.severity !== "not_found") {
-      const warningEl = subInfo.createEl("span", {
-        cls: "mitre-validation-icon",
-        attr: {
-          "title": subtech.validationMessage || "Warning"
-        }
-      });
-      warningEl.innerHTML = getSeverityIcon(subtech.severity);
     }
     subInfo.createEl("span", {
       text: subtech.id,
@@ -2599,7 +2676,7 @@ function handleSearchInput(query, modalEl, currentTactics, ctx, searchUI) {
 }
 
 // src/mitre/RenderMitreModal.ts
-var RenderMitreModal = class extends import_obsidian4.Modal {
+var RenderMitreModal = class extends import_obsidian5.Modal {
   constructor(app, plugin, activeTechniqueId) {
     super(app);
     this.mitreDataset = null;
@@ -2615,7 +2692,6 @@ var RenderMitreModal = class extends import_obsidian4.Modal {
     this.TECHNIQUE_TRUNCATE_LIMIT = 180;
     this.SUBTECHNIQUE_TRUNCATE_LIMIT = 100;
     this.plugin = plugin;
-    this.timeProcessor = new TimeTimelineProcessor(app, plugin, IOC_TYPES);
     this.activeTechniqueId = activeTechniqueId || null;
     this.loadDataset();
   }
@@ -2699,7 +2775,7 @@ var RenderMitreModal = class extends import_obsidian4.Modal {
   async renderMitreMapping(container, statsContainer) {
     if (DEBUG)
       console.debug("[MitreModal] ===== STARTING DATA EXTRACTION =====");
-    const iocData = this.timeProcessor.extractFixedIOCData();
+    const iocData = extractFixedIOCData(this.app);
     if (DEBUG)
       console.debug("[MitreModal] Extracted IOC count:", iocData.length);
     this.iocCount = iocData.length;
@@ -2743,48 +2819,7 @@ var RenderMitreModal = class extends import_obsidian4.Modal {
       });
       return;
     }
-    const totalTechniques = tactics.reduce((sum, t) => sum + t.techniques.length, 0);
-    const foundTechniques = tactics.reduce((sum, t) => sum + t.techniques.filter((tech) => tech.isFound).length, 0);
-    const coveragePercent = totalTechniques > 0 ? Math.round(foundTechniques / totalTechniques * 100) : 0;
-    statsContainer.createEl("div", {
-      text: `\u{1F4CA} Coverage: ${foundTechniques}/${totalTechniques} techniques (${coveragePercent}%)`,
-      cls: "mitre-stat-item"
-    });
-    const activeTactics = tactics.filter((t) => t.techniques.some((tech) => tech.isFound)).length;
-    statsContainer.createEl("div", {
-      text: `\u2694\uFE0F Tactics: ${activeTactics}/${tactics.length} active`,
-      cls: "mitre-stat-item"
-    });
-    statsContainer.createEl("div", {
-      text: `\u{1F4C7} IOC Cards: ${this.iocCount} total`,
-      cls: "mitre-stat-item"
-    });
-    const missingTacticCount = missingFields.missingTactic.length;
-    if (missingTacticCount > 0) {
-      const missingTacticEl = statsContainer.createEl("div", {
-        text: `\u26A0\uFE0F Missing Tactic: ${missingTacticCount} card${missingTacticCount === 1 ? "" : "s"}`,
-        cls: "mitre-stat-item mitre-stat-warning"
-      });
-      const tooltipText = missingFields.missingTactic.map((info) => {
-        const missing = info.missing === "both" ? "tactic, technique" : "tactic";
-        return `${info.iocType} ${info.cardId} (missing: ${missing})`;
-      }).join("\n");
-      missingTacticEl.setAttribute("title", tooltipText);
-      missingTacticEl.setAttribute("aria-label", `${missingTacticCount} cards missing tactic field`);
-    }
-    const missingTechniqueCount = missingFields.missingTechnique.length;
-    if (missingTechniqueCount > 0) {
-      const missingTechniqueEl = statsContainer.createEl("div", {
-        text: `\u26A0\uFE0F Missing Technique: ${missingTechniqueCount} card${missingTechniqueCount === 1 ? "" : "s"}`,
-        cls: "mitre-stat-item mitre-stat-warning"
-      });
-      const tooltipText = missingFields.missingTechnique.map((info) => {
-        const missing = info.missing === "both" ? "tactic, technique" : "technique";
-        return `${info.iocType} ${info.cardId} (missing: ${missing})`;
-      }).join("\n");
-      missingTechniqueEl.setAttribute("title", tooltipText);
-      missingTechniqueEl.setAttribute("aria-label", `${missingTechniqueCount} cards missing technique field`);
-    }
+    renderStatsBar(statsContainer, tactics, result.iocCount, missingFields);
     this.currentTactics = tactics;
     const ctx = this.getContext();
     renderValidationErrors(container, this.validationErrors);
@@ -2796,20 +2831,18 @@ var RenderMitreModal = class extends import_obsidian4.Modal {
     if (DEBUG)
       console.debug("[MitreModal] Matrix rendering complete:", {
         tactics: tactics.length,
-        techniques: totalTechniques,
-        found: foundTechniques,
-        coverage: coveragePercent + "%"
+        iocCards: result.iocCount
       });
   }
 };
 
 // src/settings/PluginSettings.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 var DEFAULT_SETTINGS = {
   cardSize: "medium",
   showTimelineButton: true
 };
-var PluginSettings = class extends import_obsidian5.PluginSettingTab {
+var PluginSettings = class extends import_obsidian6.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -2818,13 +2851,13 @@ var PluginSettings = class extends import_obsidian5.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "IOC Canvas Plugin Settings" });
-    new import_obsidian5.Setting(containerEl).setName("Default card size").setDesc("Set the default size for IOC cards").addDropdown(
+    new import_obsidian6.Setting(containerEl).setName("Default card size").setDesc("Set the default size for IOC cards").addDropdown(
       (dropdown) => dropdown.addOption("small", "Small").addOption("medium", "Medium").addOption("large", "Large").setValue(this.plugin.settings.cardSize).onChange(async (value) => {
         this.plugin.settings.cardSize = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("Show timeline button").setDesc("Display timeline button in canvas toolbar").addToggle(
+    new import_obsidian6.Setting(containerEl).setName("Show timeline button").setDesc("Display timeline button in canvas toolbar").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.showTimelineButton).onChange(async (value) => {
         this.plugin.settings.showTimelineButton = value;
         await this.plugin.saveSettings();
@@ -2834,7 +2867,7 @@ var PluginSettings = class extends import_obsidian5.PluginSettingTab {
 };
 
 // src/canvas/CanvasToolbar.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 var TIMELINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
 var CARDS_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
 var REDUCE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
@@ -2854,7 +2887,7 @@ function createToolbarButton(label, svgIcon, onClick) {
 }
 function addCanvasButtons(ctx) {
   try {
-    const activeView = ctx.app.workspace.getActiveViewOfType(import_obsidian6.ItemView);
+    const activeView = ctx.app.workspace.getActiveViewOfType(import_obsidian7.ItemView);
     if (!activeView || activeView.getViewType() !== "canvas") {
       return;
     }
@@ -2895,10 +2928,10 @@ function addCanvasButtons(ctx) {
 }
 
 // src/canvas/CanvasSelection.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 function getSelectedTechniqueId(app) {
   try {
-    const activeView = app.workspace.getActiveViewOfType(import_obsidian7.ItemView);
+    const activeView = app.workspace.getActiveViewOfType(import_obsidian8.ItemView);
     if (!activeView || activeView.getViewType() !== "canvas") {
       return null;
     }
@@ -2948,9 +2981,9 @@ function getSelectedTechniqueId(app) {
 }
 
 // src/canvas/ReduceView.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 function toggleReduceView(app, isReducedView) {
-  const activeView = app.workspace.getActiveViewOfType(import_obsidian8.ItemView);
+  const activeView = app.workspace.getActiveViewOfType(import_obsidian9.ItemView);
   if (!activeView || activeView.getViewType() !== "canvas")
     return isReducedView;
   const canvas = activeView.canvas;
@@ -2996,11 +3029,11 @@ function toggleReduceView(app, isReducedView) {
 }
 
 // src/canvas/IOCCardCreation.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/canvas/RenderIOCCardsModal.ts
-var import_obsidian9 = require("obsidian");
-var RenderIOCCardsModal = class extends import_obsidian9.Modal {
+var import_obsidian10 = require("obsidian");
+var RenderIOCCardsModal = class extends import_obsidian10.Modal {
   constructor(app, iocTypes, onSelect, title) {
     super(app);
     this.iocTypes = iocTypes;
@@ -3078,26 +3111,17 @@ var RenderIOCCardsModal = class extends import_obsidian9.Modal {
 };
 
 // src/canvas/RenderIOCCards.ts
-var RenderIOCCards = class {
-  /**
-   * Builds the full markdown+HTML string for a new IOC card.
-   * @param iocType  - The IOCField definition from the type registry
-   * @param iocTypeId - The snake_case key (needed to detect "hostname" special case)
-   * @param osType   - If iocTypeId is "hostname", which OS variant was selected
-   * @param cardId   - Timestamp-based unique ID for the card (format: #YYYYMMDD-HHMM)
-   * @param isChild  - If true, card gets [C] prefix; if false, gets [P] prefix
-   */
-  static createCardContent(iocType, iocTypeId, osType = null, cardId = "", isChild = false) {
-    const now = new Date();
-    const timestamp = now.toISOString().replace("T", " ").substring(0, 19);
-    let iconSvg = iocType.svg;
-    if (iocTypeId === "hostname" && osType && iocType.os_icons) {
-      iconSvg = iocType.os_icons[osType] || iocType.svg;
-    }
-    const roleLabel = isChild ? "[C]" : "[P]";
-    const roleClass = isChild ? "ioc-role-child" : "ioc-role-parent";
-    const roleBadge = `<span class="ioc-card-role ${roleClass}" style="font-size: 12px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-right: 4px;">${roleLabel}</span>`;
-    let content = `<div class="ioc-card-container"><div class="ioc-card-header"
+function createCardContent(iocType, iocTypeId, osType = null, cardId = "", isChild = false) {
+  const now = new Date();
+  const timestamp = now.toISOString().replace("T", " ").substring(0, 19);
+  let iconSvg = iocType.svg;
+  if (iocTypeId === "hostname" && osType && iocType.os_icons) {
+    iconSvg = iocType.os_icons[osType] || iocType.svg;
+  }
+  const roleLabel = isChild ? "[C]" : "[P]";
+  const roleClass = isChild ? "ioc-role-child" : "ioc-role-parent";
+  const roleBadge = `<span class="ioc-card-role ${roleClass}" style="font-size: 12px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-right: 4px;">${roleLabel}</span>`;
+  let content = `<div class="ioc-card-container"><div class="ioc-card-header"
         style="display: flex; align-items: center; gap: 16px; margin-bottom: 30px; padding: 20px;
         background: linear-gradient(135deg, ${iocType.color}22, transparent);
         border-radius: 8px; border-bottom: 3px solid ${iocType.color};">
@@ -3107,36 +3131,35 @@ var RenderIOCCards = class {
         <span class="ioc-card-id" style="margin-left: auto; padding: 2px 8px; font-size: 11px; font-weight: 600; background: var(--background-modifier-border); color: var(--text-muted); border-radius: 4px; font-family: var(--font-monospace);">${cardId}</span>
         </div><!-- IOC_CARD_ID:${cardId} --></div></div>
 `;
-    iocType.fields.forEach((field) => {
-      content += `${field}: 
+  iocType.fields.forEach((field) => {
+    content += `${field}: 
 
 
 ------------
 `;
-    });
-    content += `Time of Event: ${timestamp}
+  });
+  content += `Time of Event: ${timestamp}
 
 
 ------------
 `;
-    content += `Splunk Query: 
+  content += `Splunk Query: 
 
 
 ------------
 `;
-    content += `Mitre Tactic: 
+  content += `Mitre Tactic: 
 
 
 ------------
 `;
-    content += `Mitre Technique: 
+  content += `Mitre Technique: 
 
 
 ------------
 `;
-    return content;
-  }
-};
+  return content;
+}
 
 // src/canvas/IOCCardCreation.ts
 function openIOCCardSelector(app, createCard, title) {
@@ -3150,19 +3173,19 @@ function openIOCCardSelector(app, createCard, title) {
   ).open();
 }
 function createIOCCard(app, iocTypeId, osType, isChild = false) {
-  const activeView = app.workspace.getActiveViewOfType(import_obsidian10.ItemView);
+  const activeView = app.workspace.getActiveViewOfType(import_obsidian11.ItemView);
   if (!activeView || activeView.getViewType() !== "canvas") {
-    new import_obsidian10.Notice("Please open a canvas first");
+    new import_obsidian11.Notice("Please open a canvas first");
     return;
   }
   const canvas = activeView.canvas;
   if (!canvas) {
-    new import_obsidian10.Notice("Please open a canvas first");
+    new import_obsidian11.Notice("Please open a canvas first");
     return;
   }
   const iocType = IOC_TYPES[iocTypeId];
   if (!iocType) {
-    new import_obsidian10.Notice("Unknown IOC type: " + iocTypeId);
+    new import_obsidian11.Notice("Unknown IOC type: " + iocTypeId);
     return;
   }
   const now = new Date();
@@ -3174,7 +3197,7 @@ function createIOCCard(app, iocTypeId, osType, isChild = false) {
   const cardId = `#${year}${month}${day}-${hours}${minutes}`;
   if (DEBUG)
     console.debug("[CardCreation] Creating card:", iocTypeId, cardId);
-  const content = RenderIOCCards.createCardContent(iocType, iocTypeId, osType || null, cardId, isChild);
+  const content = createCardContent(iocType, iocTypeId, osType || null, cardId, isChild);
   canvas.createTextNode({
     pos: { x: Math.random() * 400, y: Math.random() * 400 },
     // Random placement
@@ -3184,11 +3207,11 @@ function createIOCCard(app, iocTypeId, osType, isChild = false) {
     // Markdown with HTML header
   });
   canvas.requestSave();
-  new import_obsidian10.Notice(`Created ${iocType.name} card`);
+  new import_obsidian11.Notice(`Created ${iocType.name} card`);
 }
 
 // src/main.ts
-var IOCCanvasPlugin = class extends import_obsidian11.Plugin {
+var IOCCanvasPlugin = class extends import_obsidian12.Plugin {
   constructor() {
     super(...arguments);
     /** Typed settings object persisted to data.json. */
@@ -3229,7 +3252,7 @@ var IOCCanvasPlugin = class extends import_obsidian11.Plugin {
     this.addSettingTab(new PluginSettings(this.app, this));
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
-        if (file instanceof import_obsidian11.TFile && file.extension === "canvas") {
+        if (file instanceof import_obsidian12.TFile && file.extension === "canvas") {
           menu.addItem((item) => {
             item.setTitle("Show Attack Timelines").setIcon("clock").onClick(() => {
               new RenderTimelinesModal(this.app, this).open();

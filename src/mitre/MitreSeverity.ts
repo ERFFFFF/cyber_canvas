@@ -5,23 +5,21 @@
  * appropriate visual styling to technique elements in the MITRE matrix.
  *
  * Severity Ranking (highest to lowest priority):
- * 1. unknown_technique (5) - Technique ID not in dataset (red)
- * 2. unknown_tactic (4) - Tactic name not recognized (red)
- * 3. empty_tactic (3) - Technique filled but tactic empty (red)
- * 4. mismatch (2) - Both valid but wrong pairing (orange)
- * 5. valid (1) - Correct pairing (green)
+ * 1. unknown_technique (4) - Technique ID not in dataset (red)
+ * 2. unknown_tactic (3) - Tactic name not recognized (red)
+ * 3. mismatch (2) - Both valid but wrong pairing (orange)
+ * 4. valid (1) - Correct pairing (green)
  */
 
 import { ValidationSeverity } from './MitreTypes';
 
 /**
  * Whether the severity represents a critical error (red indicator).
- * Critical severities: unknown_technique, unknown_tactic, empty_tactic.
+ * Critical severities: unknown_technique, unknown_tactic.
  */
 export function isCriticalSeverity(severity: string): boolean {
     return severity === 'unknown_technique'
-        || severity === 'unknown_tactic'
-        || severity === 'empty_tactic';
+        || severity === 'unknown_tactic';
 }
 
 /**
@@ -64,9 +62,8 @@ export function shouldOverrideSeverity(
     existingSeverity: ValidationSeverity
 ): boolean {
     const severityRank: Record<ValidationSeverity, number> = {
-        'unknown_technique': 5,
-        'unknown_tactic': 4,
-        'empty_tactic': 3,
+        'unknown_technique': 4,
+        'unknown_tactic': 3,
         'mismatch': 2,
         'valid': 1
     };

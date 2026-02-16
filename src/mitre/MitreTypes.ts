@@ -16,7 +16,6 @@ export type SeverityLevel =
     | 'unknown_technique'
     | 'unknown_tactic'
     | 'mismatch'
-    | 'empty_tactic'
     | 'not_found';
 
 /** Severity values returned by validation (excludes 'not_found'). */
@@ -24,15 +23,13 @@ export type ValidationSeverity =
     | 'valid'
     | 'unknown_technique'
     | 'unknown_tactic'
-    | 'mismatch'
-    | 'empty_tactic';
+    | 'mismatch';
 
 /** Severity values that represent errors (excludes 'valid' and 'not_found'). */
 export type ErrorSeverity =
     | 'unknown_technique'
     | 'unknown_tactic'
-    | 'mismatch'
-    | 'empty_tactic';
+    | 'mismatch';
 
 // ---------------------------------------------------------------
 // Data interfaces

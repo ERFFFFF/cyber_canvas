@@ -10,13 +10,13 @@
  *   - MitreModalTacticRenderer: tactic columns, technique items, subtechniques
  *   - MitreModalValidation: validation errors section
  *   - MitreModalSearch: search bar and input handling
+ *   - MitreStatsBar: coverage, active tactics, IOC count, missing field warnings
  *   - MitreAggregator: 5-step IOC-to-matrix aggregation
  *   - MitreExport: Navigator JSON export
  *   - MitreResizable: 8-handle drag-to-resize
  */
 import { App, Modal } from 'obsidian';
-import { TimeTimelineProcessor } from '../timeline/TimeTimelineProcessing';
-import { IOC_TYPES } from '../types/IOCCardsTypes';
+import { extractFixedIOCData } from '../timeline/TimeTimelineProcessing';
 import { loadMitreDataset, MitreDataset } from './MitreLoader';
 import { DEBUG } from '../debug';
 
@@ -25,16 +25,17 @@ import { MitreTechnique, MitreTactic, SearchState, ValidationError } from './Mit
 import { aggregateTacticsTechniques } from './MitreAggregator';
 import { exportToNavigator } from './MitreExport';
 import { makeResizable } from './MitreResizable';
+import { renderStatsBar } from './MitreStatsBar';
 
 // Extracted modal modules
 import { MitreModalContext } from './MitreModalHelpers';
-import { renderTacticSection, renderSubtechniques } from './MitreModalTacticRenderer';
+import { renderTacticSection } from './MitreModalTacticRenderer';
+import { renderSubtechniques } from './MitreSubtechniqueRenderer';
 import { renderValidationErrors } from './MitreModalValidation';
 import { renderSearchBar, handleSearchInput, SearchUIElements } from './MitreModalSearch';
 
 export class RenderMitreModal extends Modal {
     private plugin: any;
-    private timeProcessor: TimeTimelineProcessor;
     private mitreDataset: MitreDataset | null = null;
     private subtechniquesMap: Map<string, MitreTechnique[]> = new Map();
     private currentSearchState: SearchState | null = null;
@@ -52,7 +53,6 @@ export class RenderMitreModal extends Modal {
     constructor(app: App, plugin: any, activeTechniqueId?: string | null) {
         super(app);
         this.plugin = plugin;
-        this.timeProcessor = new TimeTimelineProcessor(app, plugin, IOC_TYPES);
         this.activeTechniqueId = activeTechniqueId || null;
         this.loadDataset();
     }
@@ -150,7 +150,7 @@ export class RenderMitreModal extends Modal {
         if (DEBUG) console.debug('[MitreModal] ===== STARTING DATA EXTRACTION =====');
 
         // Extract IOC data
-        const iocData = this.timeProcessor.extractFixedIOCData();
+        const iocData = extractFixedIOCData(this.app);
         if (DEBUG) console.debug('[MitreModal] Extracted IOC count:', iocData.length);
         this.iocCount = iocData.length;
 
@@ -201,69 +201,8 @@ export class RenderMitreModal extends Modal {
             return;
         }
 
-        // Summary stats
-        const totalTechniques = tactics.reduce((sum, t) => sum + t.techniques.length, 0);
-        const foundTechniques = tactics.reduce((sum, t) => sum + t.techniques.filter(tech => tech.isFound).length, 0);
-        const coveragePercent = totalTechniques > 0 ? Math.round((foundTechniques / totalTechniques) * 100) : 0;
-
-        // Coverage percentage
-        statsContainer.createEl('div', {
-            text: `📊 Coverage: ${foundTechniques}/${totalTechniques} techniques (${coveragePercent}%)`,
-            cls: 'mitre-stat-item'
-        });
-
-        // Active tactics
-        const activeTactics = tactics.filter(t => t.techniques.some(tech => tech.isFound)).length;
-        statsContainer.createEl('div', {
-            text: `⚔️ Tactics: ${activeTactics}/${tactics.length} active`,
-            cls: 'mitre-stat-item'
-        });
-
-        // IOC card count
-        statsContainer.createEl('div', {
-            text: `📇 IOC Cards: ${this.iocCount} total`,
-            cls: 'mitre-stat-item'
-        });
-
-        // Missing tactics count (NEW)
-        const missingTacticCount = missingFields.missingTactic.length;
-        if (missingTacticCount > 0) {
-            const missingTacticEl = statsContainer.createEl('div', {
-                text: `⚠️ Missing Tactic: ${missingTacticCount} card${missingTacticCount === 1 ? '' : 's'}`,
-                cls: 'mitre-stat-item mitre-stat-warning'
-            });
-
-            // Hover tooltip with card details
-            const tooltipText = missingFields.missingTactic
-                .map(info => {
-                    const missing = info.missing === 'both' ? 'tactic, technique' : 'tactic';
-                    return `${info.iocType} ${info.cardId} (missing: ${missing})`;
-                })
-                .join('\n');
-
-            missingTacticEl.setAttribute('title', tooltipText);
-            missingTacticEl.setAttribute('aria-label', `${missingTacticCount} cards missing tactic field`);
-        }
-
-        // Missing techniques count (NEW)
-        const missingTechniqueCount = missingFields.missingTechnique.length;
-        if (missingTechniqueCount > 0) {
-            const missingTechniqueEl = statsContainer.createEl('div', {
-                text: `⚠️ Missing Technique: ${missingTechniqueCount} card${missingTechniqueCount === 1 ? '' : 's'}`,
-                cls: 'mitre-stat-item mitre-stat-warning'
-            });
-
-            // Hover tooltip with card details
-            const tooltipText = missingFields.missingTechnique
-                .map(info => {
-                    const missing = info.missing === 'both' ? 'tactic, technique' : 'technique';
-                    return `${info.iocType} ${info.cardId} (missing: ${missing})`;
-                })
-                .join('\n');
-
-            missingTechniqueEl.setAttribute('title', tooltipText);
-            missingTechniqueEl.setAttribute('aria-label', `${missingTechniqueCount} cards missing technique field`);
-        }
+        // Render stats bar (coverage, active tactics, IOC count, missing fields)
+        renderStatsBar(statsContainer, tactics, result.iocCount, missingFields);
 
         // Store tactics for search filtering
         this.currentTactics = tactics;
@@ -283,9 +222,7 @@ export class RenderMitreModal extends Modal {
 
         if (DEBUG) console.debug('[MitreModal] Matrix rendering complete:', {
             tactics: tactics.length,
-            techniques: totalTechniques,
-            found: foundTechniques,
-            coverage: coveragePercent + '%'
+            iocCards: result.iocCount
         });
     }
 }

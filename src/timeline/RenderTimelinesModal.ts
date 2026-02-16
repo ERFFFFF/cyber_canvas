@@ -8,10 +8,9 @@
  * All DOM is built with Obsidian's createEl/createDiv API; colors are applied
  * via inline styles using each IOC type's color from the card data.
  */
-import { App, Modal, Notice } from 'obsidian';
-import { TimeTimelineProcessor } from './TimeTimelineProcessing';
-import { IOCNodeData } from '../parsing/IOCParser';
-import { generateCopyText } from './TimelineCopyExport';
+import { App, Modal } from 'obsidian';
+import { extractFixedIOCData } from './TimeTimelineProcessing';
+import { renderTimeTimeline } from './TimeTimelineTab';
 import { renderGraphTimeline } from './GraphTimelineTab';
 import { getCanvasEdges } from '../canvas/CanvasEdges';
 import { buildParentChildGroups } from './LinkTimelineProcessing';
@@ -20,12 +19,10 @@ import { DEBUG } from '../debug';
 
 export class RenderTimelinesModal extends Modal {
     private plugin: any;
-    private timeProcessor: TimeTimelineProcessor;
 
     constructor(app: App, plugin: any) {
         super(app);
         this.plugin = plugin;
-        this.timeProcessor = new TimeTimelineProcessor(app, plugin, plugin.iocTypes);
     }
 
     onOpen(): void {
@@ -33,7 +30,7 @@ export class RenderTimelinesModal extends Modal {
         this.modalEl.classList.add('timeline-modal-fullscreen');
 
         // Extract IOC data once for all tabs
-        const iocData = this.timeProcessor.extractFixedIOCData();
+        const iocData = extractFixedIOCData(this.app);
         if (DEBUG) console.debug('[TimelineModal] Extracted', iocData.length, 'IOC cards');
 
         // Sort chronologically for time-based views
@@ -86,7 +83,7 @@ export class RenderTimelinesModal extends Modal {
         // Tab 1: Time Timeline
         const timeTab = contentArea.createDiv('timeline-tab-pane');
         tabContents['time'] = timeTab;
-        this.renderEnhancedTimeTimeline(timeTab, sortedData);
+        renderTimeTimeline(timeTab, sortedData);
 
         // Tab 2: Graph
         const graphTab = contentArea.createDiv('timeline-tab-pane');
@@ -101,97 +98,6 @@ export class RenderTimelinesModal extends Modal {
         const edges = getCanvasEdges(this.app);
         const result = buildParentChildGroups(iocData, edges);
         renderLinkTimeline(linkTab, result);
-    }
-
-    /**
-     * Renders the chronological Time Timeline. Takes pre-sorted IOC data
-     * and renders each IOC as a colored card with a gradient connector.
-     */
-    private renderEnhancedTimeTimeline(container: HTMLElement, iocData: IOCNodeData[]): void {
-        if (DEBUG) console.debug('[TimeTimeline] Starting render');
-
-        if (iocData.length === 0) {
-            container.createEl('p', {
-                text: 'No IOC cards found in the current canvas. Create some IOC cards first to see the timeline.',
-                cls: 'timeline-empty-message'
-            });
-            return;
-        }
-
-        // Add copy button for Time tab
-        const timeCopyBtn = container.createEl('button', {
-            text: 'Copy Timeline',
-            cls: 'timeline-copy-button'
-        });
-        timeCopyBtn.style.position = 'absolute';
-        timeCopyBtn.style.top = '10px';
-        timeCopyBtn.style.right = '10px';
-        timeCopyBtn.addEventListener('click', () => {
-            const text = generateCopyText(iocData);
-            navigator.clipboard.writeText(text).then(() => {
-                new Notice(`Copied ${iocData.length} entries to clipboard`);
-            });
-        });
-
-        const timelineContainer = container.createDiv('timeline-container');
-
-        iocData.forEach((ioc, index) => {
-            const timelineItem = timelineContainer.createDiv('timeline-item');
-
-            // Apply the IOC's color to background gradient and shadow for visual grouping
-            timelineItem.style.setProperty('--ioc-color', ioc.color);
-            timelineItem.style.setProperty('--ioc-color-30', `${ioc.color}30`);
-            timelineItem.style.background = `linear-gradient(135deg, ${ioc.color}15 0%, ${ioc.color}05 100%)`;
-            timelineItem.style.boxShadow = `0 4px 12px ${ioc.color}25`;
-            timelineItem.style.borderColor = ioc.color;
-
-            // Gradient connector between this card and the next one
-            if (index < iocData.length - 1) {
-                const connector = timelineItem.createDiv('timeline-connector');
-                connector.style.background = `linear-gradient(180deg, ${ioc.color} 0%, ${iocData[index + 1].color} 100%)`;
-            }
-
-            const iconContainer = timelineItem.createDiv('timeline-icon');
-            iconContainer.innerHTML = ioc.icon;
-            iconContainer.style.background = `${ioc.color}20`;
-            iconContainer.style.borderColor = ioc.color;
-
-            const detailsContainer = timelineItem.createDiv('timeline-details');
-
-            const titleEl = detailsContainer.createEl('h3', { text: ioc.type });
-            titleEl.style.textShadow = `0 1px 3px ${ioc.color}40`;
-
-            const timeEl = detailsContainer.createDiv('timeline-time');
-            timeEl.textContent = `Time: ${ioc.time}`;
-
-            if (ioc.value && ioc.value.trim()) {
-                const valueEl = detailsContainer.createDiv('timeline-value');
-                valueEl.textContent = `Value: ${ioc.value}`;
-            }
-
-            if (ioc.splunkQuery && ioc.splunkQuery.trim()) {
-                const splunkEl = detailsContainer.createDiv('timeline-splunk');
-                splunkEl.textContent = `Splunk Query: ${ioc.splunkQuery}`;
-            }
-
-            if (ioc.tactic) {
-                const tacticEl = detailsContainer.createDiv('timeline-tactic');
-                tacticEl.textContent = `Tactic: ${ioc.tactic}`;
-            }
-
-            if (ioc.technique) {
-                const techniqueEl = detailsContainer.createDiv('timeline-technique');
-                techniqueEl.textContent = `Technique: ${ioc.technique}`;
-            }
-
-            timelineItem.addEventListener('mouseover', () => {
-                timelineItem.style.boxShadow = `0 8px 20px ${ioc.color}35`;
-            });
-
-            timelineItem.addEventListener('mouseout', () => {
-                timelineItem.style.boxShadow = `0 4px 12px ${ioc.color}25`;
-            });
-        });
     }
 
     onClose(): void {

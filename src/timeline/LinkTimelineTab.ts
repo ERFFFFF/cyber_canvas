@@ -11,6 +11,7 @@
 
 import { ParentChildGroup, LinkTimelineResult } from './LinkTimelineProcessing';
 import { IOCNodeData } from '../types/IOCNodeData';
+import { renderIOCCardRow } from './LinkTimelineCardRow';
 
 /**
  * Type guard to check if an item is a ParentChildGroup (nested) or IOCNodeData (leaf).
@@ -75,6 +76,7 @@ export function renderLinkTimeline(container: HTMLElement, result: LinkTimelineR
 
     /**
      * Render a leaf child node (no nested children).
+     * Delegates to shared renderIOCCardRow helper.
      *
      * @param childrenContainer - Parent DOM element
      * @param child - Child IOC node data
@@ -85,43 +87,12 @@ export function renderLinkTimeline(container: HTMLElement, result: LinkTimelineR
         child: IOCNodeData,
         depth: number
     ): void {
-        const childEl = childrenContainer.createDiv('link-timeline-child');
-        childEl.classList.add(`depth-${depth}`);
-        childEl.style.borderLeftColor = child.color;
-        childEl.style.marginLeft = `${depth * 30}px`; // 30px per depth level
-
-        // Connector line
-        childEl.createDiv('link-timeline-connector');
-
-        // Child role badge
-        childEl.createEl('span', {
-            text: child.isChild ? '[C]' : '[P]',
-            cls: `link-timeline-role-badge ${child.isChild ? 'role-child' : 'role-parent'}`
+        renderIOCCardRow({
+            container: childrenContainer,
+            ioc: child,
+            showConnector: true,
+            depth
         });
-
-        // Icon
-        const childIcon = childEl.createDiv('link-timeline-icon');
-        childIcon.innerHTML = child.icon;
-        childIcon.style.color = child.color;
-
-        // Details
-        const childDetails = childEl.createDiv('link-timeline-details');
-        childDetails.createEl('strong', { text: child.type });
-        if (child.time) {
-            childDetails.createEl('span', { text: ` | ${child.time}`, cls: 'link-timeline-time' });
-        }
-        if (child.cardId) {
-            childDetails.createEl('span', { text: ` | ${child.cardId}`, cls: 'link-timeline-card-id' });
-        }
-        if (child.value && child.value.trim()) {
-            childDetails.createDiv({ text: child.value, cls: 'link-timeline-value' });
-        }
-        if (child.tactic) {
-            childDetails.createDiv({ text: `Tactic: ${child.tactic}`, cls: 'link-timeline-tactic' });
-        }
-        if (child.technique) {
-            childDetails.createDiv({ text: `Technique: ${child.technique}`, cls: 'link-timeline-technique' });
-        }
     }
 
     /**

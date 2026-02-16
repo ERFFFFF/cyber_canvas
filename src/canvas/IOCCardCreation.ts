@@ -9,7 +9,7 @@
 import { App, ItemView, Notice } from 'obsidian';
 import { IOC_TYPES } from '../types/IOCCardsTypes';
 import { RenderIOCCardsModal } from './RenderIOCCardsModal';
-import { RenderIOCCards } from './RenderIOCCards';
+import { createCardContent } from './RenderIOCCards';
 import { DEBUG } from '../debug';
 
 /**
@@ -79,7 +79,7 @@ export function createIOCCard(app: App, iocTypeId: string, osType?: string, isCh
     if (DEBUG) console.debug('[CardCreation] Creating card:', iocTypeId, cardId);
 
     // Generate markdown content for the IOC card
-    const content = RenderIOCCards.createCardContent(iocType, iocTypeId, osType || null, cardId, isChild);
+    const content = createCardContent(iocType, iocTypeId, osType || null, cardId, isChild);
 
     // Create text node on canvas with random position
     canvas.createTextNode({

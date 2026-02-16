@@ -9,7 +9,8 @@
       "Bash(cd:*)",
       "Bash(wc:*)",
       "Bash(npm run:*)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(find:*)"
     ]
   }
 }
