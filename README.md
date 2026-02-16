@@ -129,8 +129,9 @@ The Link Timeline uses directional arrows to represent relationships:
 **Interactive Features:**
 
 - **Click techniques** to expand/collapse descriptions and subtechniques
-- **Search bar** with quoted phrase support (`"spear phishing"`) or simple keywords.
+- **Search bar** with quoted phrase support (`"spear phishing"`) or simple keywords
 - **Count badges** show how many IOC cards reference each technique
+- **Color-coded validation** (no warning icons, only background colors for visual clarity)
 - **Validation error categories** (collapsible):
   - 🔴 **Missing Tactic:** Technique filled, tactic empty
   - 🔴 **Unknown Tactic:** Abbreviation not recognized
@@ -299,45 +300,96 @@ npm run build
 
 ```
 cyber-canvas/
-├── src/                          # TypeScript source files
-│   ├── main.ts                   # Plugin entry point (434 lines, 22% comments)
-│   ├── IOCParser.ts              # Shared parsing logic (398 lines, 24% comments)
-│   ├── RenderMitreModal.ts       # MITRE modal (1,798 lines, 19% comments)
-│   ├── MitreLoader.ts            # STIX 2.1 parser (388 lines, 28% comments)
-│   ├── TimeTimelineProcessing.ts # Timeline processor (79 lines, 22% comments)
-│   ├── RenderTimelinesModal.ts   # Timeline UI (131 lines, 21% comments)
-│   ├── RenderIOCCards.ts         # Card template generator (73 lines, 37% comments)
-│   ├── RenderIOCCardsModal.ts    # IOC selector modal (138 lines, 17% comments)
-│   ├── IOCCardsTypes.ts          # Type definitions (288 lines, 13% comments)
-│   ├── IOCCardFactory.ts         # CRUD helpers (79 lines, 30% comments)
-│   └── PluginSettings.ts         # Settings tab (69 lines, 26% comments)
-├── styles.css                    # Plugin styles (859 lines)
-├── MITRE/                        # MITRE ATT&CK dataset directory
-│   └── enterprise-attack.json    # STIX 2.1 bundle (download separately)
-├── manifest.json                 # Obsidian plugin manifest
-├── package.json                  # NPM dependencies
-├── tsconfig.json                 # TypeScript config
-├── esbuild.config.mjs           # Build config
-├── CLAUDE.md                     # Development instructions
-└── README.md                     # This file
+├── src/
+│   ├── main.ts                              # Plugin shell (132 lines) - lifecycle, settings
+│   ├── debug.ts                             # Debug flag (2 lines)
+│   │
+│   ├── types/
+│   │   ├── IOCCardsTypes.ts                 # IOC type definitions (286 lines)
+│   │   └── IOCNodeData.ts                   # IOCNodeData interface (35 lines)
+│   │
+│   ├── canvas/
+│   │   ├── CanvasToolbar.ts                 # Toolbar injection (141 lines)
+│   │   ├── CanvasSelection.ts              # Selection helper (88 lines)
+│   │   ├── ReduceView.ts                    # Reduce toggle (85 lines)
+│   │   ├── IOCCardCreation.ts              # Card creation (90 lines)
+│   │   ├── RenderIOCCards.ts               # Card templates (72 lines)
+│   │   └── RenderIOCCardsModal.ts          # IOC selector modal (122 lines)
+│   │
+│   ├── parsing/
+│   │   ├── IOCParser.ts                     # Parser orchestrator (97 lines)
+│   │   ├── IOCTypeDetection.ts             # Type detection (69 lines)
+│   │   ├── IOCFieldExtractors.ts           # Field extraction (240 lines)
+│   │   └── IOCVisualLookup.ts              # Visual lookup (37 lines)
+│   │
+│   ├── timeline/
+│   │   ├── TimeTimelineProcessing.ts       # Timeline processor (79 lines)
+│   │   ├── TimeTimelineTab.ts              # Time timeline tab (85 lines)
+│   │   ├── GraphTimelineTab.ts             # Graph timeline (284 lines)
+│   │   ├── GraphTimelineHelpers.ts         # Graph helpers (82 lines)
+│   │   ├── GraphTimelineRendering.ts       # Graph DOM builder (171 lines)
+│   │   ├── LinkTimelineTab.ts              # Link timeline (238 lines)
+│   │   ├── LinkTimelineCardRow.ts          # Card row renderer (69 lines)
+│   │   ├── LinkTimelineProcessing.ts       # Link grouping (195 lines)
+│   │   ├── TimelineCopyExport.ts           # Copy export (42 lines)
+│   │   ├── CanvasEdges.ts                  # Edge extraction (35 lines)
+│   │   └── RenderTimelinesModal.ts         # Timeline modal (108 lines)
+│   │
+│   ├── mitre/
+│   │   ├── MitreTypes.ts                    # Shared interfaces (86 lines)
+│   │   ├── MitreTextUtils.ts               # Description utils (58 lines)
+│   │   ├── MitreSeverity.ts                # Severity helpers (71 lines)
+│   │   ├── MitreSearch.ts                   # Search engine (204 lines)
+│   │   ├── MitreAggregator.ts              # Matrix aggregation (288 lines)
+│   │   ├── MitreAggregatorTypes.ts         # Aggregation interfaces (138 lines)
+│   │   ├── MitreAggregatorCardProcessing.ts # Card processing (296 lines)
+│   │   ├── MitreExport.ts                   # Navigator export (129 lines)
+│   │   ├── MitreResizable.ts               # Modal resize (129 lines)
+│   │   ├── MitreLoader.ts                   # Dataset loader (113 lines)
+│   │   ├── MitreStixParser.ts              # STIX parser (209 lines)
+│   │   ├── MitreValidation.ts              # Validation logic (174 lines)
+│   │   ├── MitreModalHelpers.ts            # Context & utils (131 lines)
+│   │   ├── MitreCountBadge.ts              # Count badge renderer (79 lines)
+│   │   ├── MitreSubtechniqueRenderer.ts    # Subtechnique renderer (129 lines)
+│   │   ├── MitreStatsBar.ts                # Stats bar renderer (122 lines)
+│   │   ├── MitreModalTacticRenderer.ts     # Tactic renderer (194 lines)
+│   │   ├── MitreModalValidation.ts         # Validation UI (162 lines)
+│   │   ├── MitreModalSearch.ts             # Search UI (169 lines)
+│   │   └── RenderMitreModal.ts             # Modal orchestrator (228 lines)
+│   │
+│   └── settings/
+│       └── PluginSettings.ts                # Settings tab (68 lines)
+│
+├── styles.css                               # All styling (1,285 lines)
+├── MITRE/
+│   └── enterprise-attack.json               # STIX 2.1 bundle (download separately)
+├── manifest.json                            # Obsidian plugin manifest
+├── package.json                             # NPM dependencies
+├── tsconfig.json                            # TypeScript config
+├── esbuild.config.mjs                      # Build config
+├── CLAUDE.md                                # Development instructions
+└── README.md                                # This file
 ```
 
-**Total:** 3,875 lines TypeScript (782 comment lines, 20.2% ratio)
+**Total:** ~5,792 lines TypeScript across 46 source files (largest: MitreAggregatorCardProcessing.ts at 296 lines)
 
 ### Architecture Overview
 
 **Plugin Lifecycle:**
 1. `main.ts` → `IOCCanvasPlugin.onload()` registers commands, ribbon icons, settings tab
-2. `addCanvasButtons()` injects toolbar buttons into Obsidian's `.canvas-controls` bar on every canvas view
-3. User creates IOC card → `createIOCCard()` → `RenderIOCCards.createCardContent()` generates markdown
-4. User opens timeline → `RenderTimelinesModal` → `TimeTimelineProcessor.extractFixedIOCData()` → `IOCParser.parseIOCNode()` extracts data
-5. User opens MITRE modal → `RenderMitreModal` → `MitreLoader.loadMitreDataset()` → `aggregateTacticsTechniques()` validates and displays
+2. `CanvasToolbar.addCanvasButtons()` injects toolbar buttons into Obsidian's `.canvas-controls` bar
+3. User creates IOC card → `IOCCardCreation.createIOCCard()` → `RenderIOCCards.createCardContent()` generates markdown
+4. User opens timeline → `RenderTimelinesModal` → `TimeTimelineProcessing.extractFixedIOCData()` → `IOCParser.parseIOCNode()` extracts data
+5. User opens MITRE modal → `RenderMitreModal` → `MitreLoader.loadMitreDataset()` → `MitreAggregator.aggregateTacticsTechniques()` validates and displays
 
 **Key Design Patterns:**
+- **Modular architecture:** 46 files organized into 6 subdirectories (types, canvas, parsing, timeline, mitre, settings)
+- **Free functions with context interfaces:** Extracted modules use exported functions with `ToolbarContext` and `MitreModalContext` instead of class methods
+- **Single-responsibility modules:** Each file under 300 lines, focused on one task (e.g., `MitreCountBadge.ts`, `GraphTimelineHelpers.ts`)
 - **Shared parser:** `IOCParser.ts` handles all IOC detection and field extraction (used by timeline and MITRE modal)
 - **Internal Canvas API:** Accesses `(view as any).canvas` with null checks for graceful degradation
-- **STIX 2.1 native:** `MitreLoader` parses official MITRE datasets directly (no preprocessing)
-- **Severity-based validation:** Uses `valid | unknown_technique | unknown_tactic | mismatch | empty_tactic` enum
+- **STIX 2.1 native:** `MitreStixParser` parses official MITRE datasets directly (no preprocessing)
+- **Severity-based validation:** Uses `valid | unknown_technique | unknown_tactic | mismatch` enum (color-coded, no warning icons)
 - **Helper extraction:** Reusable helpers like `isCriticalSeverity()`, `getSeverityIcon()`, `applySeverityClass()`, `toggleExpansion()`
 
 ### Testing
@@ -401,7 +453,6 @@ Contributions welcome! Please:
 | `mismatch` | ⚠️ | Orange | Both valid but technique doesn't belong to that tactic |
 | `unknown_technique` | 🔴 | Red | Technique ID not found in dataset |
 | `unknown_tactic` | 🔴 | Red | Tactic name/abbreviation not recognized |
-| `empty_tactic` | 🔴 | Red | Technique filled but tactic field is empty |
 | `not_found` | - | Gray | Valid technique but not referenced in any IOC card |
 
 ---

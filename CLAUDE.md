@@ -8,20 +8,24 @@ Cyber Canvas is an Obsidian plugin for cybersecurity forensic analysis. It adds 
 
 ## Recent Changes
 
+**Code Simplification (2026-02-16):**
+- Removed dead code: MITRE tooltip code with wrong property names, `empty_tactic` severity level references
+- Converted `RenderIOCCards` and `TimeTimelineProcessor` classes to free functions
+- Wrapped 10 unguarded `console.log` calls in `if (DEBUG) console.debug()`
+- Split 7 large files into 11 new modules: `MitreAggregatorTypes.ts`, `MitreAggregatorCardProcessing.ts`, `MitreStixParser.ts`, `MitreValidation.ts`, `GraphTimelineHelpers.ts`, `GraphTimelineRendering.ts`, `MitreCountBadge.ts`, `MitreSubtechniqueRenderer.ts`, `LinkTimelineCardRow.ts`, `MitreStatsBar.ts`, `TimeTimelineTab.ts`
+- Deduplicated viewport padding calculations in GraphTimelineTab via `computePaddedViewport()` helper
+- Deduplicated card row rendering in LinkTimelineTab via `renderIOCCardRow()` helper
+- Total: 46 source files (was 34), largest file now under 350 lines
+- Disabled validation warning icons in MITRE modal tactic columns (validation colors still applied)
+
 **Timeline Features (2026-02-16):**
-- Implemented Graph Timeline with drag-to-zoom (Splunk-like interaction), manual time range inputs, viewport-based filtering, and two-line axis timestamps (`YYYY-MM-DD\nHH:MM:SS`)
-- Implemented Link Timeline with hierarchical parent-child grouping, arrow-based relationship detection, expandable nested structures (parent→child→grandchild), and error detection for Child→Parent arrow violations
-- Refactored copy button behavior: removed global copy, added tab-specific buttons (Time: copy all, Graph: copy filtered range, Link: no copy), implemented time range filtering in `generateCopyText()`
-- Refined error detection logic: P→P arrows now allowed, only C→P arrows flagged as errors
-- Created 4 new timeline modules: `GraphTimelineTab.ts`, `LinkTimelineTab.ts`, `LinkTimelineProcessing.ts`, `TimelineCopyExport.ts`
+- Implemented Graph Timeline with drag-to-zoom (Splunk-like interaction), manual time range inputs, viewport-based filtering, and two-line axis timestamps
+- Implemented Link Timeline with hierarchical parent-child grouping, arrow-based relationship detection, expandable nested structures, and error detection for Child→Parent arrow violations
+- Refactored copy button behavior: removed global copy, added tab-specific buttons (Time: copy all, Graph: copy filtered range, Link: no copy)
+- Refined error detection logic: P→P arrows allowed, only C→P arrows flagged as errors
 
 **Folder Reorganization (2026-02-15):**
-Organized all 30 source files into 6 subdirectories (`types/`, `canvas/`, `parsing/`, `timeline/`, `mitre/`, `settings/`). Split 3 large files: `main.ts` (494→132 lines), `IOCParser.ts` (389→97 lines), `RenderMitreModal.ts` (936→246 lines). Created 11 new single-responsibility modules. All files now under 562 lines. Class methods converted to exported free functions with context interfaces (`ToolbarContext`, `MitreModalContext`).
-
-**Previous Changes (2026-02-15):**
-- Split `RenderMitreModal.ts` (2,112 lines) into 8 modules, then further into 12 modules
-- Removed dead code: MitreData.ts (547 lines), parse-mitre-stix.js (144 lines), DiagnosticTests.ts (315 lines), IOCCardFactory.ts (79 lines)
-- Added comprehensive inline documentation (15-20% comment ratio across all files)
+Organized all source files into 6 subdirectories (`types/`, `canvas/`, `parsing/`, `timeline/`, `mitre/`, `settings/`). Split large files into single-responsibility modules. Class methods converted to exported free functions with context interfaces (`ToolbarContext`, `MitreModalContext`).
 
 ## Build Commands
 
@@ -55,28 +59,39 @@ The build outputs `main.js` directly in the project root (consumed by Obsidian).
 - `IOCFieldExtractors.ts` — All `extract*` functions (value, time, splunk, MITRE, cardId). **CRITICAL**: MITRE field extraction uses `[ \t]*` (spaces/tabs only) instead of `\s*` to avoid matching newlines.
 - `IOCVisualLookup.ts` — `lookupTypeVisuals(iocType)` searches `IOC_TYPES` for SVG icon and color.
 
-**Timeline (`src/timeline/`, 6 modules):**
-- `TimeTimelineProcessing.ts` — Extracts IOC data via `IOCParser`, returns flat array for chronological sorting by "Time of Event" field. Used by Time Timeline tab.
-- `GraphTimelineTab.ts` — Horizontal dot timeline with drag-to-zoom. Renders interactive axis with colored dots, selection overlay, manual time inputs, and filtered card list. Edge padding (8%), two-line timestamps, viewport-based positioning.
-- `LinkTimelineTab.ts` — Hierarchical parent-child timeline renderer. Displays expandable groups with role badges ([P]/[C]), nested structures (depth-based indentation), and error section for Child→Parent arrow violations.
-- `LinkTimelineProcessing.ts` — Parent-child grouping algorithm from canvas edges. Builds `ParentChildGroup` hierarchy, detects root parents, recursively nests children, validates arrow directions (flags C→P, allows P→P). Returns `LinkTimelineResult` with groups + error cards.
-- `TimelineCopyExport.ts` — Tab-separated text generator for clipboard export. Supports optional time range filtering (`startTime`/`endTime`) for Graph Timeline's filtered copy. Format: `Time\tTactic\tTechnique\tValue`.
-- `RenderTimelinesModal.ts` — Full-screen modal orchestrator. Creates tab bar (Time/Graph/Link), renders tab-specific content, manages tab switching, handles IOC data extraction and edge loading.
+**Timeline (`src/timeline/`, 10 modules):**
+- `TimeTimelineProcessing.ts` — `extractFixedIOCData(app)` free function extracts IOC data via `IOCParser`, returns flat array for chronological sorting.
+- `TimeTimelineTab.ts` — `renderTimeTimeline()` renders chronological timeline with gradient cards, connectors, and copy button.
+- `GraphTimelineTab.ts` — Horizontal dot timeline orchestrator with drag-to-zoom interaction, input handlers, and filtered list.
+- `GraphTimelineHelpers.ts` — `computePaddedViewport()`, `formatTimestamp()`, `formatShortTime()`, `EDGE_PADDING_PERCENT` constant.
+- `GraphTimelineRendering.ts` — `createGraphTimelineDOM()` creates all DOM elements (controls, axis, dots, list), returns `GraphTimelineDOM` refs.
+- `LinkTimelineTab.ts` — Hierarchical parent-child timeline renderer with expandable groups, role badges ([P]/[C]), and error section.
+- `LinkTimelineCardRow.ts` — `renderIOCCardRow()` shared helper for rendering card rows (connector, badge, icon, details).
+- `LinkTimelineProcessing.ts` — Parent-child grouping algorithm from canvas edges. Returns `LinkTimelineResult` with groups + error cards.
+- `TimelineCopyExport.ts` — `generateCopyText()` creates tab-separated text with optional time range filtering.
+- `RenderTimelinesModal.ts` — Modal orchestrator with tab bar (Time/Graph/Link), tab switching, IOC data extraction.
 
-**MITRE ATT&CK Integration (`src/mitre/`, 12 modules):**
+**MITRE ATT&CK Integration (`src/mitre/`, 20 modules):**
 - `MitreTypes.ts` — Shared interfaces (`MitreTechnique`, `MitreTactic`, `SearchState`, `ValidationError`, `SeverityLevel`). Foundation, no deps.
 - `MitreTextUtils.ts` — `cleanDescription()` and `truncateDescription()`. Removes markdown links and citation brackets.
-- `MitreSeverity.ts` — `isCriticalSeverity()`, `getSeverityIcon()`, `applySeverityClass()`, `shouldOverrideSeverity()`. Severity ranking: unknown_technique (5) > unknown_tactic (4) > empty_tactic (3) > mismatch (2) > valid (1).
-- `MitreSearch.ts` — `parseSearchQuery()`, `matchesSearch()` (4-level hierarchy: ID > name > description > subtechniques), `highlightMatches()`.
-- `MitreAggregator.ts` — 5-step IOC-to-MITRE matrix aggregation. Exports `aggregateTacticsTechniques()`, `extractTechniqueId()`, `extractTechniqueName()`.
-- `MitreExport.ts` — `exportToNavigator()` takes pre-computed tactics (what-you-see-is-what-you-export).
-- `MitreResizable.ts` — `makeResizable(modal)` with 8 drag handles (corners + edges).
-- `MitreLoader.ts` — STIX 2.1 bundle parser from `MITRE/enterprise-attack.json`. Caching, `validateTechniqueTactic()`, abbreviation support.
-- `MitreModalHelpers.ts` — `MitreModalContext` interface (replaces `this` for extracted functions), `isActiveTechnique()`, `toggleExpansion()`.
-- `MitreModalTacticRenderer.ts` — `renderTacticSection()`, `renderSubtechniques()`, `createCountBadgeWithTooltip()`.
-- `MitreModalValidation.ts` — `renderValidationErrors()` with grouped error categories (Missing Tactic, Unknown Tactic, Technique Errors, Mismatches).
-- `MitreModalSearch.ts` — `SearchUIElements` interface, `renderSearchBar()`, `handleSearchInput()` with debounced re-render.
-- `RenderMitreModal.ts` — Class shell with lifecycle (onOpen/onClose), `getContext()` builder, `renderMitreMapping()`. Orchestrates all modules above.
+- `MitreSeverity.ts` — `isCriticalSeverity()`, `getSeverityIcon()`, `applySeverityClass()`, `shouldOverrideSeverity()`. Severity ranking: unknown_technique (4) > unknown_tactic (3) > mismatch (2) > valid (1).
+- `MitreSearch.ts` — `parseSearchQuery()`, `matchesSearch()` (4-level hierarchy), `highlightMatches()`.
+- `MitreAggregatorTypes.ts` — `AggregationResult` interface, `extractTechniqueId()`, `extractTechniqueName()`, `TACTIC_ORDER` constant.
+- `MitreAggregatorCardProcessing.ts` — `buildFoundTechniquesFromIOC()` (STEP 1 of aggregation), `markParentAsFound()`.
+- `MitreAggregator.ts` — `aggregateTacticsTechniques()` (STEPs 2-5 of aggregation). Re-exports from MitreAggregatorTypes.
+- `MitreExport.ts` — `exportToNavigator()` generates MITRE ATT&CK Navigator JSON.
+- `MitreResizable.ts` — `makeResizable(modal)` with 8 drag handles.
+- `MitreLoader.ts` — `loadMitreDataset()` with caching. Exports interfaces. Re-exports from MitreValidation.
+- `MitreStixParser.ts` — `parseStixBundle()` two-pass STIX 2.1 parser, `generateAbbreviations()`, `TACTIC_ABBREVIATIONS`.
+- `MitreValidation.ts` — `normalizeTacticName()`, `validateTechniqueTactic()` with severity levels.
+- `MitreCountBadge.ts` — `createCountBadgeWithTooltip()` creates hover tooltips with card details.
+- `MitreSubtechniqueRenderer.ts` — `renderSubtechniques()` expandable subtechnique list.
+- `MitreStatsBar.ts` — `renderStatsBar()` renders coverage stats, active tactics, IOC count, missing field warnings.
+- `MitreModalHelpers.ts` — `MitreModalContext` interface, `isActiveTechnique()`, `toggleExpansion()`.
+- `MitreModalTacticRenderer.ts` — `renderTacticSection()`, technique items. No inline validation icons.
+- `MitreModalValidation.ts` — `renderValidationErrors()` with grouped error categories.
+- `MitreModalSearch.ts` — `renderSearchBar()`, `handleSearchInput()` with debounced re-render.
+- `RenderMitreModal.ts` — Modal lifecycle, `getContext()`, `renderMitreMapping()`. Orchestrates all modules.
 
 **Settings (`src/settings/`):**
 - `PluginSettings.ts` — Single settings tab (card size, timeline button toggle).
