@@ -5,8 +5,8 @@
  * has an expand/collapse toggle to show its linked child cards. Children
  * are rendered indented with a vertical connector line.
  *
- * Supports hierarchical nesting: parent → child → grandchild with depth-based
- * indentation (30px per level).
+ * Uses flat 2-level hierarchy: [P] → [C] (all children at same indentation).
+ * Orphaned C→C arrows (no [P] upstream) are flagged as errors.
  */
 
 import { ParentChildGroup, LinkTimelineResult } from './LinkTimelineProcessing';
@@ -26,9 +26,9 @@ function isParentChildGroup(item: IOCNodeData | ParentChildGroup): item is Paren
  * For each parent-child group:
  *   - Parent card header with [P] badge, type, time, value, expand toggle
  *   - Collapsible children section with [C] badges and vertical connector
- *   - Supports hierarchical nesting: parent → child → grandchild
+ *   - Flat 2-level hierarchy: all [C] cards at same indentation under [P]
  *   - Default state: collapsed (children hidden)
- *   - Error section for cards with bad directional arrows
+ *   - Error section for cards with bad directional arrows (C→P and C→C)
  *
  * @param container - Parent DOM element to render into
  * @param result - LinkTimelineResult with valid groups and error cards
@@ -54,11 +54,12 @@ export function renderLinkTimeline(container: HTMLElement, result: LinkTimelineR
     }
 
     /**
-     * Recursively render a child item (can be a leaf node or nested parent group).
+     * Render a child item (leaf node only in flat hierarchy).
+     * Note: With flat hierarchy, child will always be IOCNodeData (never ParentChildGroup).
      *
      * @param childrenContainer - Parent DOM element to append the child to
-     * @param child - Child item (IOCNodeData or ParentChildGroup)
-     * @param depth - Nesting depth (0 = direct child, 1 = grandchild, etc.)
+     * @param child - Child item (IOCNodeData or ParentChildGroup, but always IOCNodeData in practice)
+     * @param depth - Nesting depth (always 0 in flat hierarchy)
      */
     function renderChild(
         childrenContainer: HTMLElement,
@@ -247,11 +248,11 @@ export function renderLinkTimeline(container: HTMLElement, result: LinkTimelineR
 
         // Error header
         const errorHeader = errorSection.createDiv('link-timeline-error-header');
-        errorHeader.textContent = '⚠️ Cards with Child→Parent Arrows';
+        errorHeader.textContent = '⚠️ Directional Errors: Child→Parent & Child→Child';
 
         // Error description
         const errorDesc = errorSection.createDiv('link-timeline-error-description');
-        errorDesc.textContent = 'These cards are marked [P] (parent) but have incoming arrows FROM [C] (child) cards. Child cards should not point to parent cards. Note: Parent→Parent arrows are allowed.';
+        errorDesc.textContent = 'These cards have incorrect arrow connections: [P] cards with incoming arrows FROM [C] cards (Child→Parent), or orphaned [C] cards with no [P] parent in their upstream chain. C→C arrows are allowed when a parent exists above.';
 
         // Render each bad card
         badDirectionalCards.forEach(card => {

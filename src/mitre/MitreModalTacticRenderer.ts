@@ -129,17 +129,6 @@ function renderTechniqueItem(
         });
     }
 
-    // Validation icon rendering disabled per user request
-    // if (technique.isFound && technique.severity !== 'valid' && technique.severity !== 'not_found') {
-    //     const warningEl = techInfo.createEl('span', {
-    //         cls: 'mitre-validation-icon',
-    //         attr: {
-    //             'title': technique.validationMessage || 'Warning'
-    //         }
-    //     });
-    //     warningEl.innerHTML = getSeverityIcon(technique.severity);
-    // }
-
     techInfo.createEl('span', {
         text: technique.id,
         cls: 'mitre-technique-id'
