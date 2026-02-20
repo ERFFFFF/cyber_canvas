@@ -1,0 +1,164 @@
+graph BT
+    %% ===== LEAF MODULES (no internal deps) =====
+    debug["debug.ts"]
+    ICT["types/IOCCardsTypes"]
+    IND["types/IOCNodeData"]
+    ITD["parsing/IOCTypeDetection"]
+    MT["mitre/MitreTypes"]
+    MTU["mitre/MitreTextUtils"]
+    GTH["timeline/GraphTimelineHelpers"]
+
+    %% ===== LAYER 1 =====
+    CT["canvas/CanvasToolbar"] --> debug
+    RV["canvas/ReduceView"] --> debug
+    CE["canvas/CanvasEdges"] --> debug
+    CCM["canvas/CanvasContextMenu"] --> debug
+    RIC["canvas/RenderIOCCards"] --> ICT
+    RICM["canvas/RenderIOCCardsModal"] --> ICT
+    IFE["parsing/IOCFieldExtractors"] --> debug
+    IVL["parsing/IOCVisualLookup"] --> ICT
+    MS["mitre/MitreSeverity"] --> MT
+    MR["mitre/MitreResizable"] --> debug
+    MSB["mitre/MitreStatsBar"] --> MT
+    TCE["timeline/TimelineCopyExport"] --> IND
+    LTCR["timeline/LinkTimelineCardRow"] --> IND
+    GTR["timeline/GraphTimelineRendering"] --> IND
+    GTR --> GTH
+
+    %% ===== LAYER 2 =====
+    MSR["mitre/MitreSearch"] --> MT
+    MSR --> debug
+    IP["parsing/IOCParser"] --> debug
+    IP --> IND
+    IP --> ITD
+    IP --> IFE
+    IP --> IVL
+
+    %% ===== LAYER 2-3 (circular cluster) =====
+    ML["mitre/MitreLoader"] --> debug
+    ML -.->|"re-exports"| MV["mitre/MitreValidation"]
+    ML --> MSP["mitre/MitreStixParser"]
+    MSP -.->|"interfaces"| ML
+    MV -.->|"interfaces"| ML
+    MV --> debug
+    MSP --> debug
+
+    %% ===== LAYER 3 =====
+    CS["canvas/CanvasSelection"] --> IP
+    CS --> debug
+    ICC["canvas/IOCCardCreation"] --> ICT
+    ICC --> RICM
+    ICC --> RIC
+    ICC --> debug
+    TTP["timeline/TimeTimelineProcessing"] --> IP
+    TTP --> debug
+    LTP["timeline/LinkTimelineProcessing"] --> IND
+    LTP --> CE
+    MAT["mitre/MitreAggregatorTypes"] --> IP
+    MAT --> MT
+    MAT --> ML
+    MAT --> debug
+    MMH["mitre/MitreModalHelpers"] --> MT
+    MMH --> MTU
+    MMH --> MSR
+    MMH --> IND
+    ME["mitre/MitreExport"] --> MT
+    ME --> MS
+    ME --> ML
+    ME --> debug
+
+    %% ===== LAYER 4 =====
+    MACP["mitre/MitreAggregatorCardProc"] --> IP
+    MACP --> MT
+    MACP --> MS
+    MACP --> ML
+    MACP --> MAT
+    MACP --> debug
+    MCB["mitre/MitreCountBadge"] --> MT
+    MCB --> MMH
+    MCB --> ICT
+    MCB --> debug
+    GTT["timeline/GraphTimelineTab"] --> IND
+    GTT --> TCE
+    GTT --> GTH
+    GTT --> GTR
+    TTT["timeline/TimeTimelineTab"] --> IP
+    TTT --> TCE
+    TTT --> debug
+    LTT["timeline/LinkTimelineTab"] --> LTP
+    LTT --> IND
+    LTT --> LTCR
+
+    %% ===== LAYER 5 =====
+    MA["mitre/MitreAggregator"] --> IP
+    MA --> MT
+    MA --> ML
+    MA --> debug
+    MA -.->|"re-exports"| MAT
+    MA --> MACP
+    MSTR["mitre/MitreSubtechniqueRenderer"] --> MT
+    MSTR --> MTU
+    MSTR --> MS
+    MSTR --> MSR
+    MSTR --> MMH
+    MSTR --> MCB
+
+    %% ===== LAYER 6 =====
+    MMTR["mitre/MitreModalTacticRenderer"] --> MT
+    MMTR --> MTU
+    MMTR --> MS
+    MMTR --> MSR
+    MMTR --> MMH
+    MMTR --> MCB
+    MMTR --> debug
+    MMV["mitre/MitreModalValidation"] --> MT
+    MMV --> MS
+    MMV --> debug
+
+    %% ===== LAYER 7 =====
+    MMS["mitre/MitreModalSearch"] --> MT
+    MMS --> MSR
+    MMS --> MMH
+    MMS --> MMTR
+    MMS --> debug
+    RTM["timeline/RenderTimelinesModal"] --> TTP
+    RTM --> TTT
+    RTM --> GTT
+    RTM --> CE
+    RTM --> LTP
+    RTM --> LTT
+    RTM --> debug
+
+    %% ===== LAYER 8 (top orchestrators) =====
+    RMM["mitre/RenderMitreModal"] --> TTP
+    RMM --> ML
+    RMM --> debug
+    RMM --> IND
+    RMM --> MT
+    RMM --> MA
+    RMM --> ME
+    RMM --> MR
+    RMM --> MSB
+    RMM --> MMH
+    RMM --> MMTR
+    RMM --> MSTR
+    RMM --> MMV
+    RMM --> MMS
+
+    %% ===== LAYER 9 (entry point) =====
+    MAIN["main.ts"] --> RTM
+    MAIN --> RMM
+    MAIN --> PS["settings/PluginSettings"]
+    MAIN --> CT
+    MAIN --> CS
+    MAIN --> RV
+    MAIN --> ICC
+    MAIN --> CCM
+    PS -.->|"type ref"| MAIN
+
+    %% Styling
+    style MAIN fill:#4a90d9,color:#fff
+    style debug fill:#95a5a6,color:#fff
+    style ICT fill:#7f8c8d,color:#fff
+    style IND fill:#7f8c8d,color:#fff
+    style MT fill:#7f8c8d,color:#fff

@@ -1,0 +1,88 @@
+classDiagram
+    class MitreDataset {
+        <<interface>>
+        +version: string
+        +last_updated: string
+        +tactics: Record~string, TacticData~
+        +techniques: Record~string, TechniqueData~
+    }
+
+    class TacticData {
+        <<interface>>
+        +id: string
+        +name: string
+        +short_name: string
+        +description: string
+        +abbreviations: string[]
+    }
+
+    class TechniqueData {
+        <<interface>>
+        +id: string
+        +name: string
+        +description: string
+        +tactics: string[]
+        +parent?: string
+        +url: string
+    }
+
+    class MitreTechnique {
+        <<interface>>
+        +id: string
+        +name: string
+        +tactic: string
+        +tacticId: string
+        +count: number
+        +iocCards: string[]
+        +severity: SeverityLevel
+        +validationMessage?: string
+        +description?: string
+        +isFound: boolean
+    }
+
+    class MitreTactic {
+        <<interface>>
+        +name: string
+        +displayName?: string
+        +techniques: MitreTechnique[]
+    }
+
+    class AggregationResult {
+        <<interface>>
+        +tactics: MitreTactic[]
+        +validationErrors: ValidationError[]
+        +subtechniquesMap: Map~string, MitreTechnique[]~
+        +iocDataMap: Map~string, IOCNodeData~
+        +iocCount: number
+        +missingFields: MissingFieldsResult
+    }
+
+    class ValidationError {
+        <<interface>>
+        +techniqueId: string
+        +techniqueName: string
+        +severity: ErrorSeverity
+        +message: string
+        +iocCards: Array~CardRef~
+    }
+
+    class SearchState {
+        <<interface>>
+        +query: string
+        +keywords: string[]
+        +phrases: string[]
+        +isActive: boolean
+    }
+
+    class MissingFieldsResult {
+        <<interface>>
+        +missingTactic: MissingFieldInfo[]
+        +missingTechnique: MissingFieldInfo[]
+    }
+
+    MitreDataset o-- TacticData
+    MitreDataset o-- TechniqueData
+    MitreTactic o-- MitreTechnique
+    AggregationResult o-- MitreTactic
+    AggregationResult o-- ValidationError
+    AggregationResult o-- MissingFieldsResult

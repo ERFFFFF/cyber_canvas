@@ -1,0 +1,41 @@
+sequenceDiagram
+    actor User
+    participant Main as IOCCanvasPlugin
+    participant RTM as RenderTimelinesModal
+    participant TTP as extractFixedIOCData
+    participant IP as IOCParser
+    participant CE as CanvasEdges
+    participant LTP as LinkTimelineProcessing
+    participant TTT as TimeTimelineTab
+    participant GTT as GraphTimelineTab
+    participant LTT as LinkTimelineTab
+
+    User->>Main: Clicks Timeline clock button
+    Main->>RTM: new RenderTimelinesModal(app, plugin).open()
+
+    RTM->>RTM: onOpen() -- create tab bar (Time | Graph | Link)
+
+    RTM->>TTP: extractFixedIOCData(app)
+    TTP->>IP: canvas.nodes.forEach -> parseIOCNode(node)
+    IP-->>TTP: IOCNodeData[]
+    TTP-->>RTM: iocData (flat array)
+    RTM->>RTM: sortedData = sort by time ascending
+
+    Note over RTM: Render all 3 tabs (only Time visible initially)
+
+    RTM->>TTT: renderTimeTimeline(timeTab, sortedData)
+    Note over TTT: Chronological cards + gradient connectors + copy btn
+
+    RTM->>GTT: renderGraphTimeline(graphTab, sortedData)
+    Note over GTT: Dot axis + drag-to-zoom + filtered list + copy btn
+
+    RTM->>CE: getCanvasEdges(app)
+    CE-->>RTM: edges: EdgeData[]
+    RTM->>LTP: buildParentChildGroups(iocData, edges)
+    Note over LTP: Build hierarchy from [P]->[C] edges<br/>Detect C->P violations
+    LTP-->>RTM: LinkTimelineResult {groups, badDirectionalCards}
+    RTM->>LTT: renderLinkTimeline(linkTab, result)
+    Note over LTT: Expandable [P]/[C] hierarchy + error section
+
+    User->>RTM: Clicks tab button (Graph / Link)
+    RTM->>RTM: Hide other tabs, show selected tab

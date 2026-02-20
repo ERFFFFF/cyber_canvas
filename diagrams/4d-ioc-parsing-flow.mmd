@@ -1,0 +1,50 @@
+sequenceDiagram
+    participant Caller as Caller (extractFixedIOCData)
+    participant IP as IOCParser
+    participant ITD as IOCTypeDetection
+    participant IFE as IOCFieldExtractors
+    participant IVL as IOCVisualLookup
+
+    Caller->>IP: parseIOCNode(node)
+    IP->>IP: Check node.text exists
+
+    IP->>ITD: detectIOCType(node.text)
+    Note over ITD: Test 16 regex patterns in order<br/>(File Hash before File, etc.)
+    ITD-->>IP: iocType: string (e.g., "IP Address")
+
+    alt No type matched
+        IP-->>Caller: return null
+    end
+
+    IP->>IFE: extractValue(text)
+    Note over IFE: Find first field after HTML header<br/>Extract up to separator/next field
+    IFE-->>IP: value: string
+
+    IP->>IFE: extractTime(text)
+    Note over IFE: 6 regex patterns in precedence order
+    IFE-->>IP: time: string (ISO format)
+
+    IP->>IFE: extractSplunkQuery(text)
+    IFE-->>IP: splunkQuery: string
+
+    IP->>IFE: extractTactic(text)
+    Note over IFE: /Mitre Tactic:[ \t]*/i<br/>Uses [ \t]* not \s* to avoid newline match
+    IFE-->>IP: tactic: string (UPPERCASE)
+
+    IP->>IFE: extractTechnique(text)
+    IFE-->>IP: technique: string
+
+    IP->>IFE: extractCardId(text)
+    Note over IFE: HTML comment or "Card ID:" field
+    IFE-->>IP: cardId: string
+
+    IP->>IFE: extractCardRole(text)
+    Note over IFE: [P] -> 'parent', [C] -> 'child'
+    IFE-->>IP: role: 'parent' | 'child' | ''
+
+    IP->>IVL: lookupTypeVisuals(iocType, fallbackColor)
+    Note over IVL: Search IOC_TYPES for matching SVG + color
+    IVL-->>IP: {icon: string, color: string}
+
+    IP->>IP: Assemble IOCNodeData object
+    IP-->>Caller: IOCNodeData (or null)

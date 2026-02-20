@@ -1,0 +1,38 @@
+sequenceDiagram
+    actor User
+    participant Main as IOCCanvasPlugin
+    participant CT as CanvasToolbar
+    participant ICC as IOCCardCreation
+    participant Modal as RenderIOCCardsModal
+    participant RIC as RenderIOCCards
+    participant Canvas as Canvas API
+
+    Note over Main: Plugin loads -> injectCanvasButtons()
+    Main->>CT: addCanvasButtons(ctx: ToolbarContext)
+    CT->>CT: querySelector('.canvas-controls')
+    CT->>CT: createToolbarButton('Parent Card', SVG, ctx.onAddCard)
+
+    User->>CT: Clicks "Parent Card" button
+    CT->>ICC: openIOCCardSelector(app, callback, 'Select Parent IOC Type')
+    ICC->>Modal: new RenderIOCCardsModal(app, IOC_TYPES, onSelect)
+    ICC->>Modal: .open()
+    Modal->>Modal: onOpen() -- render grid of 16 IOC types
+
+    alt Hostname type selected
+        User->>Modal: Clicks "Hostname"
+        Modal->>Modal: showOSSelector() -- 4 OS buttons
+        User->>Modal: Clicks OS (e.g., "Windows Workstation")
+        Modal->>ICC: onSelect('hostname', 'windows_workstation')
+    else Other type selected
+        User->>Modal: Clicks type (e.g., "IP Address")
+        Modal->>ICC: onSelect('ip_address')
+    end
+
+    Modal->>Modal: close()
+    ICC->>ICC: createIOCCard(app, iocTypeId, osType, isChild)
+    ICC->>ICC: Generate cardId = "#YYYYMMDD-HHMM"
+    ICC->>RIC: createCardContent(iocType, iocTypeId, osType, cardId, isChild)
+    RIC-->>ICC: markdown string (HTML header + fields + MITRE fields)
+    ICC->>Canvas: canvas.createTextNode({pos, size, text})
+    ICC->>Canvas: canvas.requestSave()
+    ICC->>User: Notice("Created {name} card")

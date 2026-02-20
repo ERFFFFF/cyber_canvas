@@ -10,7 +10,9 @@
       "Bash(wc:*)",
       "Bash(npm run:*)",
       "Bash(git mv:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(npx:*)",
+      "Bash(ls:*)"
     ]
   }
 }

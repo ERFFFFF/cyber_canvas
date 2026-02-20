@@ -1,0 +1,91 @@
+graph TB
+    subgraph Entry["Entry Point"]
+        main["main.ts<br/>IOCCanvasPlugin"]
+    end
+
+    subgraph Canvas["canvas/ — UI Integration"]
+        CT["CanvasToolbar"]
+        CS["CanvasSelection"]
+        RV["ReduceView"]
+        ICC["IOCCardCreation"]
+        RIC["RenderIOCCards"]
+        RICM["RenderIOCCardsModal"]
+        CE["CanvasEdges"]
+        CCM["CanvasContextMenu"]
+    end
+
+    subgraph Parsing["parsing/ — IOC Extraction"]
+        IP["IOCParser"]
+        ITD["IOCTypeDetection"]
+        IFE["IOCFieldExtractors"]
+        IVL["IOCVisualLookup"]
+    end
+
+    subgraph Timeline["timeline/ — Temporal Views"]
+        TTP["TimeTimelineProcessing"]
+        TTT["TimeTimelineTab"]
+        GTT["GraphTimelineTab"]
+        GTH["GraphTimelineHelpers"]
+        GTR["GraphTimelineRendering"]
+        LTT["LinkTimelineTab"]
+        LTCR["LinkTimelineCardRow"]
+        LTP["LinkTimelineProcessing"]
+        TCE["TimelineCopyExport"]
+        RTM["RenderTimelinesModal"]
+    end
+
+    subgraph Mitre["mitre/ — ATT&CK Framework"]
+        MT["MitreTypes"]
+        MTU["MitreTextUtils"]
+        MS["MitreSeverity"]
+        MSR["MitreSearch"]
+        MA["MitreAggregator"]
+        MAT["MitreAggregatorTypes"]
+        MACP["MitreAggregatorCardProc"]
+        ME["MitreExport"]
+        MR["MitreResizable"]
+        ML["MitreLoader"]
+        MSP["MitreStixParser"]
+        MV["MitreValidation"]
+        MCB["MitreCountBadge"]
+        MSTR["MitreSubtechniqueRenderer"]
+        MSB["MitreStatsBar"]
+        MMH["MitreModalHelpers"]
+        MMTR["MitreModalTacticRenderer"]
+        MMV["MitreModalValidation"]
+        MMS["MitreModalSearch"]
+        RMM["RenderMitreModal"]
+    end
+
+    subgraph Types["types/ — Data Shapes"]
+        ICT["IOCCardsTypes"]
+        IND["IOCNodeData"]
+    end
+
+    subgraph Settings["settings/"]
+        PS["PluginSettings"]
+    end
+
+    subgraph Shared["Shared"]
+        DBG["debug.ts"]
+    end
+
+    main -->|"registers buttons"| Canvas
+    main -->|"opens modals"| RTM & RMM
+    main -->|"loads settings"| PS
+    Canvas -->|"parses cards"| Parsing
+    Canvas -->|"reads types"| Types
+    Timeline -->|"parses IOC data"| Parsing
+    Timeline -->|"reads edges"| CE
+    Mitre -->|"parses IOC data via"| TTP
+    Mitre -->|"reads types"| Types
+    Parsing -->|"uses type defs"| Types
+
+    style Entry fill:#4a90d9,color:#fff
+    style Canvas fill:#5ba85b,color:#fff
+    style Parsing fill:#d4a843,color:#fff
+    style Timeline fill:#c76b4a,color:#fff
+    style Mitre fill:#9b59b6,color:#fff
+    style Types fill:#7f8c8d,color:#fff
+    style Settings fill:#7f8c8d,color:#fff
+    style Shared fill:#7f8c8d,color:#fff

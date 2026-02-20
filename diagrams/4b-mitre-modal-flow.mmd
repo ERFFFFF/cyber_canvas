@@ -1,0 +1,58 @@
+sequenceDiagram
+    actor User
+    participant Main as IOCCanvasPlugin
+    participant CS as CanvasSelection
+    participant RMM as RenderMitreModal
+    participant ML as MitreLoader
+    participant SP as StixParser
+    participant TTP as extractFixedIOCData
+    participant IP as IOCParser
+    participant MA as MitreAggregator
+    participant MACP as AggregatorCardProc
+    participant MV as MitreValidation
+    participant Render as Rendering Functions
+
+    User->>Main: Clicks MITRE crosshair button
+    Main->>CS: getSelectedTechniqueId(app)
+    CS-->>Main: activeTechniqueId (string | null)
+
+    Main->>RMM: new RenderMitreModal(app, plugin, activeTechniqueId)
+    RMM->>ML: loadMitreDataset(app)
+    ML->>ML: Check cachedDataset
+    alt First load
+        ML->>ML: Read MITRE/enterprise-attack.json
+        ML->>SP: parseStixBundle(stixBundle)
+        Note over SP: Pass 0: version info<br/>Pass 1: tactics + abbreviations<br/>Pass 2: techniques + parents
+        SP-->>ML: MitreDataset
+        ML->>ML: Cache dataset
+    end
+    ML-->>RMM: MitreDataset
+
+    Main->>RMM: .open()
+    RMM->>RMM: onOpen() -- makeResizable, create header
+    RMM->>Render: renderSearchBar(header, callback)
+    RMM->>RMM: renderMitreMapping(content, stats) [async]
+
+    RMM->>TTP: extractFixedIOCData(app)
+    TTP->>IP: canvas.nodes.forEach -> parseIOCNode(node)
+    Note over IP: See Sequence 4d
+    IP-->>TTP: IOCNodeData per node
+    TTP-->>RMM: iocData: IOCNodeData[]
+
+    RMM->>MA: aggregateTacticsTechniques(iocData, dataset)
+    MA->>MACP: STEP 1: buildFoundTechniquesFromIOC(iocData, dataset)
+    loop Each IOC card with technique
+        MACP->>MV: validateTechniqueTactic(techId, tactic, dataset)
+        MV-->>MACP: {severity, message?, tacticId?}
+    end
+    MACP-->>MA: BuildFoundResult (foundTechniques, cardValidations, missing*)
+
+    Note over MA: STEP 2: Build tacticMap from dataset (14 tactics)<br/>STEP 3: Populate techniques (found=highlighted, unfound=gray)<br/>STEP 4: Sort by TACTIC_ORDER, found-first<br/>STEP 5: Build validationErrors from cardValidations
+    MA-->>RMM: AggregationResult
+
+    RMM->>Render: renderStatsBar(stats, tactics, iocCount, missingFields)
+    RMM->>RMM: getContext() -> MitreModalContext
+    RMM->>Render: renderValidationErrors(container, errors)
+    loop Each of 14 tactics
+        RMM->>Render: renderTacticSection(container, tactic, ctx, searchState)
+    end

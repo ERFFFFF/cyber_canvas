@@ -1,0 +1,86 @@
+classDiagram
+    class Plugin {
+        <<Obsidian>>
+        +app: App
+        +onload(): void
+        +onunload(): void
+    }
+
+    class Modal {
+        <<Obsidian>>
+        +app: App
+        +modalEl: HTMLElement
+        +open(): void
+        +close(): void
+        +onOpen(): void
+        +onClose(): void
+    }
+
+    class PluginSettingTab {
+        <<Obsidian>>
+        +app: App
+        +display(): void
+    }
+
+    class IOCCanvasPlugin {
+        +settings: IOCCanvasPluginSettings
+        +isReducedView: boolean
+        -canvasWrapperEl: HTMLElement|null
+        +onload(): void
+        +onunload(): void
+        +loadSettings(): Promise~void~
+        +saveSettings(): Promise~void~
+        -injectCanvasButtons(): void
+    }
+
+    class RenderMitreModal {
+        -plugin: any
+        -mitreDataset: MitreDataset|null
+        -subtechniquesMap: Map
+        -currentSearchState: SearchState|null
+        -currentTactics: MitreTactic[]|null
+        -validationErrors: ValidationError[]
+        -activeTechniqueId: string|null
+        -iocDataMap: Map
+        -iocCount: number
+        -searchUI: SearchUIElements
+        -TECHNIQUE_TRUNCATE_LIMIT: 180
+        -SUBTECHNIQUE_TRUNCATE_LIMIT: 100
+        +onOpen(): void
+        +onClose(): void
+        -getContext(): MitreModalContext
+        -loadDataset(): Promise~void~
+        -renderMitreMapping(): Promise~void~
+    }
+
+    class RenderTimelinesModal {
+        -plugin: any
+        +onOpen(): void
+        +onClose(): void
+    }
+
+    class RenderIOCCardsModal {
+        -iocTypes: IOCCardsTypes
+        -onSelect: OnSelectCallback
+        -title: string
+        +onOpen(): void
+        -showOSSelector(iocTypeId): void
+        +onClose(): void
+    }
+
+    class PluginSettings {
+        +plugin: IOCCanvasPlugin
+        +display(): void
+    }
+
+    Plugin <|-- IOCCanvasPlugin
+    Modal <|-- RenderMitreModal
+    Modal <|-- RenderTimelinesModal
+    Modal <|-- RenderIOCCardsModal
+    PluginSettingTab <|-- PluginSettings
+
+    IOCCanvasPlugin ..> RenderMitreModal : creates
+    IOCCanvasPlugin ..> RenderTimelinesModal : creates
+    IOCCanvasPlugin ..> PluginSettings : creates
+    IOCCanvasPlugin --> IOCCanvasPluginSettings : holds
+    RenderMitreModal --> MitreModalContext : builds via getContext()

@@ -1,0 +1,76 @@
+classDiagram
+    class ToolbarContext {
+        <<interface>>
+        +app: App
+        +onTimeline: () => void
+        +onAddCard: () => void
+        +onChildCard: () => void
+        +onReduce: () => boolean
+        +onMitre: () => void
+        +isReducedView: boolean
+    }
+
+    class MitreModalContext {
+        <<interface>>
+        +activeTechniqueId: string|null
+        +currentSearchState: SearchState|null
+        +subtechniquesMap: Map~string, MitreTechnique[]~
+        +iocDataMap: Map~string, IOCNodeData~
+        +TECHNIQUE_TRUNCATE_LIMIT: number
+        +SUBTECHNIQUE_TRUNCATE_LIMIT: number
+        +renderSubtechniques: Function
+    }
+
+    class ParentChildGroup {
+        <<interface>>
+        +parent: IOCNodeData
+        +children: (IOCNodeData|ParentChildGroup)[]
+    }
+
+    class LinkTimelineResult {
+        <<interface>>
+        +groups: ParentChildGroup[]
+        +badDirectionalCards: IOCNodeData[]
+    }
+
+    class GraphTimelineDOM {
+        <<interface>>
+        +controlsEl: HTMLElement
+        +startInput: HTMLInputElement
+        +endInput: HTMLInputElement
+        +resetBtn: HTMLElement
+        +graphArea: HTMLElement
+        +axisEl: HTMLElement
+        +tooltip: HTMLElement
+        +selectionOverlay: HTMLElement
+        +dots: HTMLElement[]
+        +listContainer: HTMLElement
+        +copyBtn: HTMLElement
+    }
+
+    class PaddedViewport {
+        <<interface>>
+        +paddedMin: number
+        +paddedMax: number
+        +paddedSpan: number
+    }
+
+    class CardRowOptions {
+        <<interface>>
+        +container: HTMLElement
+        +ioc: IOCNodeData
+        +showConnector?: boolean
+        +depth?: number
+        +extraClasses?: string[]
+    }
+
+    class SearchUIElements {
+        <<interface>>
+        +searchBar: HTMLInputElement|null
+        +searchClearButton: HTMLElement|null
+        +searchMatchCount: HTMLElement|null
+    }
+
+    LinkTimelineResult o-- ParentChildGroup
+    ParentChildGroup o-- IOCNodeData
+    MitreModalContext --> SearchState

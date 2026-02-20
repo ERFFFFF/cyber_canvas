@@ -1,0 +1,44 @@
+classDiagram
+    class IOCNodeData {
+        <<interface>>
+        +id: string
+        +cardId?: string
+        +type: string
+        +value: string
+        +time: string
+        +splunkQuery: string
+        +tactic: string
+        +technique: string
+        +icon: string
+        +color: string
+        +isChild?: boolean
+    }
+
+    class IOCField {
+        <<interface>>
+        +name: string
+        +icon: string
+        +color: string
+        +fields: string[]
+        +svg: string
+        +os_icons?: OSIcons
+    }
+
+    class IOCCardsTypes {
+        <<interface>>
+        +[key: string]: IOCField
+    }
+
+    class EdgeData {
+        <<interface>>
+        +fromNodeId: string
+        +toNodeId: string
+    }
+
+    IOCCardsTypes o-- IOCField : values
+
+    class IOCCanvasPluginSettings {
+        <<interface>>
+        +cardSize: string
+        +showTimelineButton: boolean
+    }
