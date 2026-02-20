@@ -13,7 +13,7 @@
  * to the standalone functions.
  */
 
-import { Plugin, TFile } from 'obsidian';
+import { Plugin, TFile, ItemView } from 'obsidian';
 import { RenderTimelinesModal } from './timeline/RenderTimelinesModal';
 import { RenderMitreModal } from './mitre/RenderMitreModal';
 import { PluginSettings, IOCCanvasPluginSettings, DEFAULT_SETTINGS } from './settings/PluginSettings';
@@ -23,6 +23,7 @@ import { addCanvasButtons } from './canvas/CanvasToolbar';
 import { getSelectedTechniqueId } from './canvas/CanvasSelection';
 import { toggleReduceView } from './canvas/ReduceView';
 import { openIOCCardSelector, createIOCCard } from './canvas/IOCCardCreation';
+import { setupCanvasContextMenu, removeCanvasContextMenu } from './canvas/CanvasContextMenu';
 
 export default class IOCCanvasPlugin extends Plugin {
     /** Typed settings object persisted to data.json. */
@@ -30,6 +31,9 @@ export default class IOCCanvasPlugin extends Plugin {
 
     /** Whether the canvas IOC cards are currently in compact/reduced view. */
     isReducedView: boolean = false;
+
+    /** Tracked canvas wrapper element for context menu cleanup on unload. */
+    private canvasWrapperEl: HTMLElement | null = null;
 
     // ---------------------------------------------------------------
     // Plugin lifecycle
@@ -102,6 +106,10 @@ export default class IOCCanvasPlugin extends Plugin {
         console.log('Unloading IOC Canvas Plugin');
         document.querySelectorAll('.ioc-toolbar').forEach(el => el.remove());
         document.querySelectorAll('.ioc-reduced').forEach(el => el.classList.remove('ioc-reduced'));
+        if (this.canvasWrapperEl) {
+            removeCanvasContextMenu(this.canvasWrapperEl);
+            this.canvasWrapperEl = null;
+        }
     }
 
     // ---------------------------------------------------------------
@@ -120,7 +128,7 @@ export default class IOCCanvasPlugin extends Plugin {
     // Thin delegation to canvas modules
     // ---------------------------------------------------------------
 
-    /** Inject toolbar buttons into the active canvas view. */
+    /** Inject toolbar buttons and context menu into the active canvas view. */
     private injectCanvasButtons(): void {
         addCanvasButtons({
             app: this.app,
@@ -137,5 +145,19 @@ export default class IOCCanvasPlugin extends Plugin {
                 new RenderMitreModal(this.app, this, activeTechniqueId).open();
             }
         });
+
+        // Set up right-click context menu for IOC card role conversion
+        try {
+            const activeView = this.app.workspace.getActiveViewOfType(ItemView);
+            if (activeView && activeView.getViewType() === 'canvas') {
+                const canvas = (activeView as any).canvas;
+                if (canvas?.wrapperEl) {
+                    this.canvasWrapperEl = canvas.wrapperEl;
+                    setupCanvasContextMenu(this.app, canvas);
+                }
+            }
+        } catch (err) {
+            console.error('IOC Canvas: failed to set up context menu', err);
+        }
     }
 }
