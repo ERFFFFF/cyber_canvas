@@ -1,68 +1,78 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import IOCCanvasPlugin from '../main';
-
-/**
- * Default settings values applied when the plugin loads for the first time
- * or when a setting has not yet been configured by the user.
- */
-export const DEFAULT_SETTINGS: IOCCanvasPluginSettings = {
-  cardSize: 'medium',
-  showTimelineButton: true,
-};
+import { setDebug } from '../debug';
 
 /**
  * Typed interface for all persisted plugin settings.
  * Obsidian serialises this to `data.json` inside the plugin directory.
  */
 export interface IOCCanvasPluginSettings {
-  /** Default width preset for newly-created IOC cards ('small' | 'medium' | 'large'). */
-  cardSize: string;
-  /** Whether the floating timeline button is shown on canvas views. */
-  showTimelineButton: boolean;
+    /** Auto-fit all canvas card nodes to their content height. */
+    displayFullCardHeight: boolean;
+    /** Toggle runtime DEBUG flag for verbose console output. */
+    enableDebugMode: boolean;
 }
+
+/**
+ * Default settings values applied when the plugin loads for the first time
+ * or when a setting has not yet been configured by the user.
+ */
+export const DEFAULT_SETTINGS: IOCCanvasPluginSettings = {
+    displayFullCardHeight: false,
+    enableDebugMode: false,
+};
 
 /**
  * Settings tab rendered in Obsidian's Settings -> Community Plugins section.
  * This is the single authoritative settings UI for the plugin.
  */
 export class PluginSettings extends PluginSettingTab {
-  plugin: IOCCanvasPlugin;
+    plugin: IOCCanvasPlugin;
 
-  constructor(app: App, plugin: IOCCanvasPlugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
+    constructor(app: App, plugin: IOCCanvasPlugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
 
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.createEl('h2', { text: 'IOC Canvas Plugin Settings' });
+    display(): void {
+        const { containerEl } = this;
+        containerEl.empty();
+        containerEl.createEl('h2', { text: 'Cyber Canvas Settings' });
 
-    // Card size dropdown - controls the default dimensions of new IOC cards
-    new Setting(containerEl)
-      .setName('Default card size')
-      .setDesc('Set the default size for IOC cards')
-      .addDropdown(dropdown => dropdown
-        .addOption('small', 'Small')
-        .addOption('medium', 'Medium')
-        .addOption('large', 'Large')
-        .setValue(this.plugin.settings.cardSize)
-        .onChange(async (value: string) => {
-          this.plugin.settings.cardSize = value;
-          await this.plugin.saveSettings();
-        })
-      );
+        // Toggle: auto-fit card nodes to their content height
+        new Setting(containerEl)
+            .setName('Display full card height')
+            .setDesc('Auto-fit all IOC card nodes on the canvas to their content height.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.displayFullCardHeight)
+                .onChange(async (value: boolean) => {
+                    this.plugin.settings.displayFullCardHeight = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.applyFullCardHeight(value);
+                })
+            );
 
-    // Timeline button toggle - hides or shows the floating clock button on canvas views
-    new Setting(containerEl)
-      .setName('Show timeline button')
-      .setDesc('Display timeline button in canvas toolbar')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showTimelineButton)
-        .onChange(async (value: boolean) => {
-          this.plugin.settings.showTimelineButton = value;
-          await this.plugin.saveSettings();
-        })
-      );
-  }
+        // Toggle: enable verbose debug logging to browser console
+        new Setting(containerEl)
+            .setName('Enable debug mode')
+            .setDesc('Print verbose debug messages to the browser console (F12).')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableDebugMode)
+                .onChange(async (value: boolean) => {
+                    this.plugin.settings.enableDebugMode = value;
+                    await this.plugin.saveSettings();
+                    setDebug(value);
+                })
+            );
+
+        // Link: GitHub repository
+        new Setting(containerEl)
+            .setName('GitHub repository')
+            .setDesc(createFragment(frag => {
+                frag.createEl('a', {
+                    text: 'ERFFFFF/cyber_canvas',
+                    href: 'https://github.com/ERFFFFF/cyber_canvas',
+                });
+            }));
+    }
 }

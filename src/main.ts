@@ -21,9 +21,10 @@ import { PluginSettings, IOCCanvasPluginSettings, DEFAULT_SETTINGS } from './set
 // Canvas modules
 import { addCanvasButtons } from './canvas/CanvasToolbar';
 import { getSelectedTechniqueId } from './canvas/CanvasSelection';
-import { toggleReduceView } from './canvas/ReduceView';
+import { toggleReduceView, applyFullCardHeight as applyFullCardHeightFn } from './canvas/ReduceView';
 import { openIOCCardSelector, createIOCCard } from './canvas/IOCCardCreation';
 import { setupCanvasContextMenu, removeCanvasContextMenu } from './canvas/CanvasContextMenu';
+import { setDebug } from './debug';
 
 export default class IOCCanvasPlugin extends Plugin {
     /** Typed settings object persisted to data.json. */
@@ -44,6 +45,12 @@ export default class IOCCanvasPlugin extends Plugin {
 
         await this.loadSettings();
 
+        // Restore runtime flags from persisted settings
+        if (this.settings.enableDebugMode) setDebug(true);
+        if (this.settings.displayFullCardHeight) {
+            this.app.workspace.onLayoutReady(() => this.applyFullCardHeight(true));
+        }
+
         // Ribbon icon: quick access from the left sidebar
         this.addRibbonIcon('clock', 'Show Attack Timelines', () => {
             new RenderTimelinesModal(this.app, this).open();
@@ -62,7 +69,7 @@ export default class IOCCanvasPlugin extends Plugin {
             id: 'show-ioc-cards',
             name: 'Add Parent IOC Card',
             callback: () => {
-                openIOCCardSelector(this.app, (id, os) => createIOCCard(this.app, id, os, false), 'Select Parent IOC Type');
+                openIOCCardSelector(this.app, (id, os) => createIOCCard(this.app, id, os, false, this.settings.displayFullCardHeight), 'Select Parent IOC Type');
             }
         });
 
@@ -70,7 +77,7 @@ export default class IOCCanvasPlugin extends Plugin {
             id: 'add-child-card',
             name: 'Add Child IOC Card',
             callback: () => {
-                openIOCCardSelector(this.app, (id, os) => createIOCCard(this.app, id, os, true), 'Select Child IOC Type');
+                openIOCCardSelector(this.app, (id, os) => createIOCCard(this.app, id, os, true, this.settings.displayFullCardHeight), 'Select Child IOC Type');
             }
         });
 
@@ -124,6 +131,11 @@ export default class IOCCanvasPlugin extends Plugin {
         await this.saveData(this.settings);
     }
 
+    /** Delegate to the free function in ReduceView. Called from settings toggle. */
+    applyFullCardHeight(enable: boolean): void {
+        applyFullCardHeightFn(this.app, enable);
+    }
+
     // ---------------------------------------------------------------
     // Thin delegation to canvas modules
     // ---------------------------------------------------------------
@@ -134,8 +146,8 @@ export default class IOCCanvasPlugin extends Plugin {
             app: this.app,
             isReducedView: this.isReducedView,
             onTimeline: () => new RenderTimelinesModal(this.app, this).open(),
-            onAddCard: () => openIOCCardSelector(this.app, (id, os) => createIOCCard(this.app, id, os, false), 'Select Parent IOC Type'),
-            onChildCard: () => openIOCCardSelector(this.app, (id, os) => createIOCCard(this.app, id, os, true), 'Select Child IOC Type'),
+            onAddCard: () => openIOCCardSelector(this.app, (id, os) => createIOCCard(this.app, id, os, false, this.settings.displayFullCardHeight), 'Select Parent IOC Type'),
+            onChildCard: () => openIOCCardSelector(this.app, (id, os) => createIOCCard(this.app, id, os, true, this.settings.displayFullCardHeight), 'Select Child IOC Type'),
             onReduce: () => {
                 this.isReducedView = toggleReduceView(this.app, this.isReducedView);
                 return this.isReducedView;

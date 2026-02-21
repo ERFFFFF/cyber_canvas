@@ -83,3 +83,67 @@ export function toggleReduceView(app: App, isReducedView: boolean): boolean {
 
     return newState;
 }
+
+/**
+ * Auto-fit all IOC card nodes to their content height, or restore defaults.
+ *
+ * Enable path:
+ *   - Stores original height in `_iocOriginalHeight`
+ *   - Measures content via `contentEl.scrollHeight` (or inner `.markdown-rendered`)
+ *   - Resizes node to measured height (minimum 200px)
+ *
+ * Disable path:
+ *   - Restores `_iocOriginalHeight` (fallback 400px), then deletes the stash
+ *
+ * @param app    - Obsidian App instance
+ * @param enable - true = fit to content, false = restore original heights
+ */
+export function applyFullCardHeight(app: App, enable: boolean): void {
+    const activeView = app.workspace.getActiveViewOfType(ItemView);
+    if (!activeView || activeView.getViewType() !== 'canvas') return;
+
+    const canvas = (activeView as any).canvas;
+    if (!canvas || !canvas.nodes) return;
+
+    if (DEBUG) console.debug('[ReduceView] applyFullCardHeight:', enable);
+
+    canvas.nodes.forEach((node: any) => {
+        if (!node.text) return; // only text nodes
+
+        if (enable) {
+            // Store original height before resizing
+            if (!node._iocOriginalHeight) {
+                node._iocOriginalHeight = node.height;
+            }
+
+            // Measure rendered content height
+            let measuredHeight = 400;
+            if (node.contentEl) {
+                const rendered = node.contentEl.querySelector('.markdown-rendered');
+                // Use inner rendered height + padding, or fall back to contentEl
+                measuredHeight = rendered
+                    ? rendered.scrollHeight + 40
+                    : node.contentEl.scrollHeight;
+            }
+
+            const targetHeight = Math.max(200, measuredHeight);
+            if (node.resize) {
+                node.resize({ width: node.width, height: targetHeight });
+            } else {
+                node.height = targetHeight;
+            }
+        } else {
+            // Restore original height
+            const originalH = node._iocOriginalHeight || 400;
+            if (node.resize) {
+                node.resize({ width: node.width, height: originalH });
+            } else {
+                node.height = originalH;
+            }
+            delete node._iocOriginalHeight;
+        }
+    });
+
+    canvas.requestFrame();
+    canvas.requestSave();
+}

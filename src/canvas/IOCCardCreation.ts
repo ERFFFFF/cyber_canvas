@@ -11,6 +11,7 @@ import { IOC_TYPES } from '../types/IOCCardsTypes';
 import { RenderIOCCardsModal } from './RenderIOCCardsModal';
 import { createCardContent } from './RenderIOCCards';
 import { DEBUG } from '../debug';
+import { applyFullCardHeight } from './ReduceView';
 
 /**
  * Opens the IOC card selector modal. The callback creates the card on
@@ -46,8 +47,9 @@ export function openIOCCardSelector(app: App, createCard: (iocTypeId: string, os
  * @param iocTypeId - Snake_case IOC type key from IOC_TYPES (e.g., "ip_address")
  * @param osType - Optional OS variant for hostname cards
  * @param isChild - If true, card gets [C] prefix; if false, gets [P] prefix
+ * @param autoFitHeight - If true, re-apply full card height after creation (waits for render)
  */
-export function createIOCCard(app: App, iocTypeId: string, osType?: string, isChild: boolean = false): void {
+export function createIOCCard(app: App, iocTypeId: string, osType?: string, isChild: boolean = false, autoFitHeight: boolean = false): void {
     const activeView = app.workspace.getActiveViewOfType(ItemView);
     if (!activeView || activeView.getViewType() !== 'canvas') {
         new Notice('Please open a canvas first');
@@ -88,6 +90,11 @@ export function createIOCCard(app: App, iocTypeId: string, osType?: string, isCh
         text: content  // Markdown with HTML header
     });
     canvas.requestSave();  // Persist to .canvas file
+
+    // Re-apply full card height after markdown has rendered
+    if (autoFitHeight) {
+        setTimeout(() => applyFullCardHeight(app, true), 200);
+    }
 
     new Notice(`Created ${iocType.name} card`);
 }

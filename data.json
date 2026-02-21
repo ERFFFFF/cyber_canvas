@@ -1,4 +1,6 @@
 {
+  "displayFullCardHeight": true,
+  "enableDebugMode": true,
   "cardSize": "large",
   "showTimelineButton": true
 }
